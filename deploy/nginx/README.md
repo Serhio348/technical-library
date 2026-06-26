@@ -72,6 +72,29 @@ sudo ufw status
 
 В `hosts` на ПК: `192.168.11.83  library.local` → **http://library.local**
 
+## Ошибка 500 на :8080
+
+Чаще всего: **нет `apps/web/dist`** или **nginx не может читать файлы** (после Docker-сборки они root).
+
+```bash
+cd /opt/services/technical-library
+./scripts/build-web.sh
+ls -la apps/web/dist/index.html
+sudo chmod -R a+rX apps/web/dist
+sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
+sudo nginx -t && sudo systemctl reload nginx
+curl -I http://127.0.0.1:8080/
+sudo tail -30 /var/log/nginx/error.log
+```
+
+Быстрый откат (UI из Docker, как раньше):
+
+```bash
+sudo cp deploy/nginx/technical-library-proxy.conf /etc/nginx/sites-available/technical-library
+sudo nginx -t && sudo systemctl reload nginx
+COMPOSE_BAKE=false docker compose up -d --build
+```
+
 ## SSL (позже)
 
 Когда появится публичный домен — certbot на блок `library.ваш-домен.ru`.
