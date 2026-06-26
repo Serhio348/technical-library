@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IndexProgressPanel } from "./components/IndexProgressPanel";
 import { ChatPanel } from "./components/ChatPanel";
+import { DocumentSearch } from "./components/DocumentSearch";
 import {
   createDirection,
   createFolder,
@@ -632,6 +633,8 @@ function DirectionView({
           </div>
         </div>
 
+        <DocumentSearch slug={direction.slug} scopePath={currentPath} />
+
         <IndexProgressPanel job={indexJob} />
 
         {isEmpty ? (
@@ -717,6 +720,7 @@ function DirectionView({
             onClick={onToggleChat}
           />
           <ChatPanel
+            key={`${direction.slug}:${currentPath}`}
             slug={direction.slug}
             scopePath={currentPath}
             directionTitle={direction.title}

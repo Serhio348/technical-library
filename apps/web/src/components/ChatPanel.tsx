@@ -1,6 +1,7 @@
-import { MessageSquare, Send, X } from "lucide-react";
+import { MessageSquare, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { askQuestion, fileUrl } from "../api";
+import { clearChatHistory, loadChatHistory, saveChatHistory } from "../chatStorage";
 import type { ChatMessage, ChatSource } from "../types";
 
 const EXPAND_REQUEST_RE =
@@ -33,12 +34,16 @@ export function ChatPanel({
   llmConfigured: boolean;
   onClose: () => void;
 }): React.ReactElement {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory(slug, scopePath));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    saveChatHistory(slug, scopePath, messages);
+  }, [slug, scopePath, messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -107,6 +112,14 @@ export function ChatPanel({
     await requestAnswer(msg.pendingQuestion, "full", history, "Показать подробный ответ");
   };
 
+  const handleClearHistory = (): void => {
+    if (messages.length === 0) return;
+    if (!window.confirm("Очистить историю чата для этой папки?")) return;
+    setMessages([]);
+    clearChatHistory(slug, scopePath);
+    setError(null);
+  };
+
   const scopeLabel = scopePath ? scopePath.split("/").pop() : "всё направление";
 
   return (
@@ -122,9 +135,16 @@ export function ChatPanel({
             {scopePath ? ` → ${scopeLabel}` : ""}
           </p>
         </div>
-        <button type="button" className="tl-icon-btn" onClick={onClose} title="Закрыть чат">
-          <X size={18} />
-        </button>
+        <div className="tl-chat__header-actions">
+          {messages.length > 0 ? (
+            <button type="button" className="tl-icon-btn" onClick={handleClearHistory} title="Очистить историю">
+              <Trash2 size={16} />
+            </button>
+          ) : null}
+          <button type="button" className="tl-icon-btn" onClick={onClose} title="Закрыть чат">
+            <X size={18} />
+          </button>
+        </div>
       </header>
 
       {!llmConfigured ? (

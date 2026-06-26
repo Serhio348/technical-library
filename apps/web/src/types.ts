@@ -89,6 +89,14 @@ export type AskResponse = {
   mode: "preview" | "full";
 };
 
+export type SearchHit = {
+  path: string;
+  name: string;
+  snippet: string;
+  score: number;
+  text?: string;
+};
+
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   law: "Закон",
   standard: "ГОСТ / СП",

@@ -284,12 +284,16 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
   router.get(`${basePath}/:slug/search`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const q = typeof req.query.q === "string" ? req.query.q : "";
-    if (!isValidSlug(slug)) {
+    const scopePath = typeof req.query.scope_path === "string" ? req.query.scope_path.trim() : "";
+    if (!isValidSlug(slug) || !q.trim() || !isValidRelativePath(scopePath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
     try {
-      const hits = await searchInstallation(root, slug, q);
+      let hits = await searchInstallation(root, slug, q, 12);
+      if (scopePath) {
+        hits = hits.filter((h) => h.path === scopePath || h.path.startsWith(`${scopePath}/`));
+      }
       const enriched = await Promise.all(
         hits.map(async (hit) => ({
           ...hit,

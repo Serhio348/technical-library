@@ -124,6 +124,7 @@ curl -s "http://127.0.0.1:8080/assets/$JS" | grep -o 'Чат'
 | GET | `/api/library/directions/:slug/tree?path=` | Дерево папок и файлов |
 | POST | `/api/library/directions/:slug/folders` | Подпапка `{ path }` |
 | POST | `/api/library/directions/:slug/upload` | Upload PDF |
+| GET | `/api/library/directions/:slug/search?q=&scope_path=` | Поиск по тексту индекса |
 | GET | `/api/library/directions/:slug/context?q=` | Контекст для LLM |
 | POST | `/api/library/directions/:slug/ask` | Вопрос по документам (DeepSeek) |
 | POST | `/api/library/directions/:slug/reindex` | Переиндекс OCR |

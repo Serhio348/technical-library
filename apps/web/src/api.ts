@@ -7,6 +7,7 @@ import type {
   DocumentType,
   IndexJob,
   LibraryTree,
+  SearchHit,
 } from "./types";
 
 type ApiOptions = {
@@ -54,6 +55,15 @@ export async function askQuestion(
       mode,
     },
   });
+}
+
+export async function fetchSearch(slug: string, query: string, scopePath = ""): Promise<SearchHit[]> {
+  const params = new URLSearchParams({ q: query });
+  if (scopePath) params.set("scope_path", scopePath);
+  const data = await api<{ items?: SearchHit[] }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/search?${params}`,
+  );
+  return data.items ?? [];
 }
 
 export async function fetchDirections(): Promise<DirectionsResponse> {
@@ -200,7 +210,7 @@ export function errorMessage(code: string): string {
     case "library_unavailable":
       return "Сервис библиотеки недоступен. Запустите backend на порту 3021.";
     case "unauthorized":
-      return "Нужен ключ доступа (Настройки → секрет библиотеки).";
+      return "Нет прав на это действие.";
     case "invalid_slug":
       return "Не удалось сформировать имя папки. Уточните название направления.";
     case "title_required":

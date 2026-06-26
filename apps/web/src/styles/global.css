@@ -403,6 +403,7 @@ code {
 
 .tl-content__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
 }
@@ -672,6 +673,103 @@ code {
   color: var(--text);
 }
 
+.tl-search {
+  margin-bottom: 0.85rem;
+}
+
+.tl-search__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tl-search__icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.tl-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.tl-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.tl-search__results {
+  margin-top: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  max-height: 280px;
+  overflow: auto;
+}
+
+.tl-search__meta {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.tl-search__list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+}
+
+.tl-search__item {
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+}
+
+.tl-search__item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tl-search__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.tl-search__name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.tl-search__path {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.tl-search__snippet {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.tl-search__mark {
+  padding: 0 0.12rem;
+  border-radius: 3px;
+  background: rgba(251, 191, 36, 0.25);
+  color: var(--text);
+}
+
 .tl-menu-wrap {
   position: relative;
 }
@@ -842,6 +940,13 @@ code {
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.15);
+}
+
+.tl-chat__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .tl-chat__title {
