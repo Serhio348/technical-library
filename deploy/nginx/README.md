@@ -10,23 +10,30 @@
 
 ## 1. Контейнер (API + UI)
 
-UI встроен в образ (`apps/web` → `npm run build` в Dockerfile). После каждого `git pull` нужен **--build**:
+UI встроен в образ (`apps/web` → `npm run build` в Dockerfile). **Отдельно фронт на VPS не ставится** — только пересборка образа:
 
 ```bash
 cd /opt/services/technical-library
-git pull
-COMPOSE_BAKE=false docker compose up -d --build
-curl -s http://127.0.0.1:3021/health
-curl -s http://127.0.0.1:3021/ | grep -o 'assets/index-[^"]*\.js'
+chmod +x scripts/deploy-vps.sh
+./scripts/deploy-vps.sh
 ```
 
-В браузере: **Ctrl+F5** (жёсткое обновление), иначе может остаться старый `index.html`.
-
-Если UI не обновился:
+Или вручную:
 
 ```bash
-COMPOSE_BAKE=false docker compose build --no-cache && docker compose up -d
+git pull
+COMPOSE_BAKE=false WEB_CACHEBUST=$(date +%s) docker compose build --no-cache
+docker compose up -d
 ```
+
+Проверка UI (должен найти «Чат»):
+
+```bash
+JS=$(curl -s http://127.0.0.1:3021/ | sed -n 's|.*src="/assets/\(index-[^"]*\.js\)".*|\1|p')
+curl -s "http://127.0.0.1:3021/assets/$JS" | grep -o 'Чат'
+```
+
+В браузере: **http://192.168.11.83:8080** (не :80 — там osmos!) → **Ctrl+F5**.
 
 ## 2. Nginx
 

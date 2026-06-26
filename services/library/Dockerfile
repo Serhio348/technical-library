@@ -1,9 +1,10 @@
 FROM node:22-alpine AS web
+ARG WEB_CACHEBUST=0
 WORKDIR /web
 COPY apps/web/package.json apps/web/package-lock.json* ./
 RUN npm ci 2>/dev/null || npm install
 COPY apps/web ./
-RUN npm run build
+RUN echo "web build cachebust=$WEB_CACHEBUST" && npm run build
 
 FROM node:22-alpine AS deps
 WORKDIR /app
