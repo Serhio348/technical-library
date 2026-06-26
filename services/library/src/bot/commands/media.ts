@@ -6,6 +6,8 @@ import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard } from "../keyboards.js";
 import { runAsk } from "./ask.js";
 import { runSearchQuery } from "./search.js";
+import { replyVoiceTypingHelp } from "../voiceHelp.js";
+import { resolvedTelegramWebAppUrl } from "../../config.js";
 
 async function handleImageBuffer(
   ctx: Context,
@@ -67,5 +69,9 @@ export function registerMedia(bot: Telegraf<Context>): void {
       console.error("[bot/media] document image", e);
       await ctx.reply("Не удалось загрузить изображение.", mainKeyboard());
     }
+  });
+
+  bot.on("voice", async (ctx) => {
+    await replyVoiceTypingHelp(ctx, Boolean(resolvedTelegramWebAppUrl()));
   });
 }

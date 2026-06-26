@@ -6,6 +6,7 @@ import {
   BTN_SCOPE,
   BTN_SEARCH,
   BTN_SHOW,
+  BTN_VOICE_HELP,
   mainKeyboard,
 } from "../keyboards.js";
 import {
@@ -19,6 +20,8 @@ import { fetchDirections } from "../libraryClient.js";
 import { clearInputMode, getSession, sessionLabel } from "../session.js";
 import { runAskFull } from "./ask.js";
 import { runSearchQuery } from "./search.js";
+import { replyVoiceTypingHelp } from "../voiceHelp.js";
+import { resolvedTelegramWebAppUrl } from "../../config.js";
 
 export function registerMenu(bot: Telegraf<Context>): void {
   bot.action(/^d:(.+)$/, async (ctx) => {
@@ -78,6 +81,10 @@ export function registerMenu(bot: Telegraf<Context>): void {
         "Для тестов с вариантами ответа — сфотографируйте задание целиком.",
       mainKeyboard(),
     );
+  });
+
+  bot.hears(BTN_VOICE_HELP, async (ctx) => {
+    await replyVoiceTypingHelp(ctx, Boolean(resolvedTelegramWebAppUrl()));
   });
 
   bot.hears(BTN_SCOPE, async (ctx) => {

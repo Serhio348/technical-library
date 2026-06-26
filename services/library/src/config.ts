@@ -48,6 +48,11 @@ const envSchema = z.object({
     const v = typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
     return v || undefined;
   }, z.string().url().optional()),
+  /** HTTPS URL веб-UI для кнопки Mini App «Чат с голосом» в Telegram. */
+  TELEGRAM_WEB_APP_URL: z.preprocess((value) => {
+    const v = typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
+    return v || undefined;
+  }, z.string().url().optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -69,4 +74,10 @@ export function isDeepSeekConfigured(): boolean {
 
 export function isTelegramBotConfigured(): boolean {
   return Boolean(env.TELEGRAM_BOT_TOKEN?.trim());
+}
+
+export function resolvedTelegramWebAppUrl(): string | undefined {
+  const raw = env.TELEGRAM_WEB_APP_URL?.trim().replace(/\/+$/, "");
+  if (!raw?.startsWith("https://")) return undefined;
+  return raw;
 }
