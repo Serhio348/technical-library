@@ -557,7 +557,7 @@ function DirectionView({
   }, [menuOpen]);
 
   return (
-    <div className={`tl-workspace${chatOpen ? " tl-workspace--chat" : ""}`} style={{ "--dir-hue": hue } as React.CSSProperties}>
+    <div className="tl-workspace" style={{ "--dir-hue": hue } as React.CSSProperties}>
       <aside className="tl-sidebar">
         <div className="tl-sidebar__direction">
           <h2>{direction.title}</h2>
@@ -774,13 +774,21 @@ function DirectionView({
       </section>
 
       {chatOpen ? (
-        <ChatPanel
-          slug={direction.slug}
-          scopePath={currentPath}
-          directionTitle={direction.title}
-          llmConfigured={llmConfigured}
-          onClose={onToggleChat}
-        />
+        <>
+          <button
+            type="button"
+            className="tl-chat-backdrop"
+            aria-label="Закрыть чат"
+            onClick={onToggleChat}
+          />
+          <ChatPanel
+            slug={direction.slug}
+            scopePath={currentPath}
+            directionTitle={direction.title}
+            llmConfigured={llmConfigured}
+            onClose={onToggleChat}
+          />
+        </>
       ) : null}
     </div>
   );

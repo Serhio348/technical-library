@@ -269,21 +269,6 @@ code {
   min-height: calc(100vh - 120px);
 }
 
-.tl-workspace--chat {
-  grid-template-columns: 260px minmax(0, 1fr) min(400px, 36vw);
-}
-
-@media (max-width: 1100px) {
-  .tl-workspace--chat {
-    grid-template-columns: 1fr;
-  }
-
-  .tl-workspace--chat .tl-chat {
-    order: 3;
-    max-height: min(70vh, 560px);
-  }
-}
-
 @media (max-width: 860px) {
   .tl-workspace {
     grid-template-columns: 1fr;
@@ -799,18 +784,33 @@ code {
   }
 }
 
+.tl-chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: rgba(4, 8, 18, 0.55);
+  backdrop-filter: blur(2px);
+}
+
 .tl-chat {
+  position: fixed;
+  top: 72px;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  width: min(420px, 100vw);
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius);
+  border-radius: var(--radius) 0 0 0;
   border: 1px solid var(--border);
+  border-right: none;
   background: var(--bg-panel);
   overflow: hidden;
-  align-self: stretch;
-  min-height: 0;
-  max-height: calc(100vh - 120px);
-  position: sticky;
-  top: 88px;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.35);
 }
 
 .tl-chat__header {
