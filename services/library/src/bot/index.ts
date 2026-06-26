@@ -9,6 +9,8 @@ import { registerStart } from "./commands/start.js";
 let bot: Telegraf<Context> | null = null;
 let botRunning = false;
 
+const CONNECT_TIMEOUT_MS = 20_000;
+
 export function isBotRunning(): boolean {
   return botRunning;
 }
@@ -16,7 +18,54 @@ export function isBotRunning(): boolean {
 function tokenHint(): string {
   const t = env.TELEGRAM_BOT_TOKEN ?? "";
   if (!t.includes(":")) return "формат токена: 123456789:ABC… от @BotFather";
-  return "проверьте токен в .env (без кавычек и пробелов)";
+  return "проверьте TELEGRAM_BOT_TOKEN в .env (без кавычек)";
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} (таймаут ${ms / 1000} с — нет доступа к api.telegram.org?)`));
+    }, ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+async function bootTelegram(instance: Telegraf<Context>): Promise<void> {
+  console.log("[bot] проверка токена (getMe)…");
+  const me = await withTimeout(instance.telegram.getMe(), CONNECT_TIMEOUT_MS, "getMe");
+
+  console.log(`[bot] бот: @${me.username ?? "?"} (${me.first_name ?? "Telegram"})`);
+
+  await instance.telegram.setMyCommands([
+    { command: "start", description: "Справка и направления" },
+    { command: "directions", description: "Список направлений" },
+    { command: "dir", description: "Выбрать направление" },
+    { command: "folder", description: "Папка внутри направления" },
+    { command: "search", description: "Поиск по тексту" },
+    { command: "ask", description: "Вопрос по документам (кратко)" },
+    { command: "show", description: "Полный ответ после /ask" },
+    { command: "scope", description: "Текущий контекст" },
+    { command: "help", description: "Справка" },
+  ]);
+
+  console.log("[bot] запуск long polling…");
+  await withTimeout(
+    instance.launch({ dropPendingUpdates: true }),
+    CONNECT_TIMEOUT_MS,
+    "launch",
+  );
+
+  bot = instance;
+  botRunning = true;
+  console.log("[bot] Telegram-бот запущен");
 }
 
 export function startBot(): void {
@@ -36,7 +85,11 @@ export function startBot(): void {
     return;
   }
 
-  const instance = new Telegraf(token);
+  const telegramOptions = env.TELEGRAM_API_ROOT?.trim()
+    ? { apiRoot: env.TELEGRAM_API_ROOT.trim() }
+    : undefined;
+
+  const instance = new Telegraf(token, telegramOptions ? { telegram: telegramOptions } : undefined);
 
   registerStart(instance);
   registerContext(instance);
@@ -51,37 +104,13 @@ export function startBot(): void {
     console.error(`[bot] ошибка (${ctx.updateType}):`, err);
   });
 
-  console.log("[bot] подключение к Telegram…");
-
-  void instance.telegram
-    .setMyCommands([
-      { command: "start", description: "Справка и направления" },
-      { command: "directions", description: "Список направлений" },
-      { command: "dir", description: "Выбрать направление" },
-      { command: "folder", description: "Папка внутри направления" },
-      { command: "search", description: "Поиск по тексту" },
-      { command: "ask", description: "Вопрос по документам (кратко)" },
-      { command: "show", description: "Полный ответ после /ask" },
-      { command: "scope", description: "Текущий контекст" },
-      { command: "help", description: "Справка" },
-    ])
-    .catch((err) => {
-      console.error("[bot] не удалось задать команды меню:", err);
-    });
-
-  void instance
-    .launch()
-    .then(() => {
-      bot = instance;
-      botRunning = true;
-      console.log("[bot] Telegram-бот запущен");
-    })
-    .catch((err: unknown) => {
-      bot = null;
-      botRunning = false;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[bot] не удалось запустить бота (${msg}). API продолжает работать. ${tokenHint()}`);
-    });
+  void bootTelegram(instance).catch((err: unknown) => {
+    bot = null;
+    botRunning = false;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[bot] не удалось запустить бота: ${msg}. API продолжает работать. ${tokenHint()}`);
+    console.error("[bot] проверка с VPS: curl -s https://api.telegram.org/bot<TOKEN>/getMe");
+  });
 }
 
 export async function stopBot(reason = "shutdown"): Promise<void> {

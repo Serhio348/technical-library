@@ -43,6 +43,11 @@ const envSchema = z.object({
     (value) => value === "true" || value === "1",
     z.boolean().default(false),
   ),
+  /** Опционально: прокси/local Bot API (если api.telegram.org недоступен с VPS). */
+  TELEGRAM_API_ROOT: z.preprocess((value) => {
+    const v = typeof value === "string" ? value.trim().replace(/\/+$/, "") : "";
+    return v || undefined;
+  }, z.string().url().optional()),
 });
 
 export type Env = z.infer<typeof envSchema>;
