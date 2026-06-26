@@ -713,6 +713,13 @@ code {
   cursor: not-allowed;
 }
 
+.tl-menu__hint {
+  margin: 0.15rem 0.65rem 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
 .tl-pill--muted {
   background: rgba(148, 163, 184, 0.15);
   color: var(--text-muted);

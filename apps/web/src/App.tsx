@@ -191,6 +191,11 @@ export function App(): React.ReactElement {
 
   const handleReindexFolder = async (): Promise<void> => {
     if (!activeSlug) return;
+    const ok = window.confirm(
+      "Переиндексировать все файлы в этой папке и подпапках?\n\n" +
+        "Это может занять много времени. Для одного документа нажмите ↻ у файла или загрузите файл — он проиндексируется отдельно.",
+    );
+    if (!ok) return;
     setError(null);
     try {
       await trackIndexJob(await startReindexFolder(activeSlug, currentPath));
@@ -309,7 +314,6 @@ export function App(): React.ReactElement {
               }
             }}
             indexJob={indexJob}
-            indexRunning={indexJob?.status === "running"}
             onReindexFolder={() => void handleReindexFolder()}
             onReindexFile={(path) => void handleReindexFile(path)}
             llmConfigured={llmConfigured}
@@ -486,7 +490,6 @@ function DirectionView({
   onDeleteFolder,
   onDeleteFile,
   indexJob,
-  indexRunning,
   onReindexFolder,
   onReindexFile,
   llmConfigured,
@@ -510,13 +513,18 @@ function DirectionView({
   onDeleteFolder: (path: string, name: string) => void;
   onDeleteFile: (path: string) => void;
   indexJob: IndexJob | null;
-  indexRunning: boolean;
   onReindexFolder: () => void;
   onReindexFile: (path: string) => void;
   llmConfigured: boolean;
   chatOpen: boolean;
   onToggleChat: () => void;
 }): React.ReactElement {
+  const folderIndexRunning =
+    indexJob?.status === "running" && indexJob.scope_path === currentPath;
+
+  const isFileIndexing = (filePath: string): boolean =>
+    indexJob?.status === "running" &&
+    (indexJob.scope_path === filePath || indexJob.current_file === filePath);
   const hue = directionHue(direction.slug);
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -627,11 +635,11 @@ function DirectionView({
             <button
               type="button"
               className="tl-btn tl-btn--primary"
-              disabled={busy || indexRunning}
+              disabled={busy}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload size={16} />
-              {busy ? "Загрузка…" : indexRunning ? "Индексация…" : "Загрузить"}
+              {busy ? "Загрузка…" : "Загрузить"}
             </button>
             <div className="tl-menu-wrap" ref={menuRef}>
               <button
@@ -647,7 +655,7 @@ function DirectionView({
                   <button
                     type="button"
                     className="tl-menu__item"
-                    disabled={indexRunning}
+                    disabled={folderIndexRunning}
                     onClick={() => {
                       setMenuOpen(false);
                       onReindexFolder();
@@ -656,6 +664,9 @@ function DirectionView({
                     <RefreshCw size={15} />
                     Переиндексировать папку
                   </button>
+                  <p className="tl-menu__hint">
+                    Индексирует все файлы в папке и подпапках. Для одного документа — ↻ у файла.
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -711,17 +722,19 @@ function DirectionView({
                       {formatBytes(file.size)} · {formatDate(file.modified_at)}
                     </span>
                   </a>
-                  {file.text_index_status !== "ready" ? (
-                    <button
-                      type="button"
-                      className="tl-icon-btn"
-                      title="Переиндексировать файл (OCR)"
-                      disabled={indexRunning}
-                      onClick={() => onReindexFile(file.path)}
-                    >
-                      <RefreshCw size={15} />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="tl-icon-btn"
+                    title={
+                      file.text_index_status === "ready"
+                        ? "Переиндексировать заново (OCR)"
+                        : "Переиндексировать файл (OCR)"
+                    }
+                    disabled={isFileIndexing(file.path)}
+                    onClick={() => onReindexFile(file.path)}
+                  >
+                    <RefreshCw size={15} />
+                  </button>
                   <button
                     type="button"
                     className="tl-icon-btn tl-icon-btn--danger"

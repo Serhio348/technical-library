@@ -234,7 +234,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         saved.push(entry);
         savedPaths.push(entry.path);
       }
-      const jobId = startFilesIndexJob(root, slug, relDir, savedPaths, false);
+      const jobId = startFilesIndexJob(root, slug, relDir, savedPaths, true);
       res.status(201).json({ items: saved, indexing: "background", job_id: jobId });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -419,15 +419,19 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       }
     }
     try {
-      const scopePath = filePaths.length === 1 ? filePaths[0]! : relPath;
-      const running = findRunningIndexJob(slug, scopePath);
+      const running =
+        filePaths.length === 1
+          ? findRunningIndexJob(slug, filePaths[0]!)
+          : filePaths.length > 0
+            ? null
+            : findRunningIndexJob(slug, relPath);
       if (running) {
         res.status(202).json({ ok: true, status: "running", job_id: running.job_id, job: running });
         return;
       }
       const jobId =
         filePaths.length > 0
-          ? startFilesIndexJob(root, slug, scopePath, filePaths, true)
+          ? startFilesIndexJob(root, slug, relPath, filePaths, true)
           : startFolderReindexJob(root, slug, relPath);
       const job = getIndexJob(jobId);
       res.status(202).json({

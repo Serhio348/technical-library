@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import {
   createIndexJob,
   failIndexJob,
@@ -7,6 +8,12 @@ import {
   updateIndexJobScanComplete,
 } from "./indexJobs.js";
 import { indexFileText, listIndexableFiles, reindexSingleFile } from "./storage.js";
+
+/** Scope job key: one file — путь файла; несколько — уникальный batch (не блокирует папку). */
+export function indexJobScopeForFiles(scopePath: string, filePaths: string[]): string {
+  if (filePaths.length === 1) return filePaths[0]!;
+  return `${scopePath}@batch-${randomUUID().slice(0, 8)}`;
+}
 
 export function startFolderReindexJob(root: string, slug: string, relPath: string): string {
   const job = createIndexJob(slug, relPath);
@@ -21,7 +28,8 @@ export function startFilesIndexJob(
   filePaths: string[],
   force = false,
 ): string {
-  const job = createIndexJob(slug, scopePath);
+  const jobScope = indexJobScopeForFiles(scopePath, filePaths);
+  const job = createIndexJob(slug, jobScope);
   void runFilesIndexJob(root, slug, job.job_id, filePaths, force);
   return job.job_id;
 }
