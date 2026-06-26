@@ -2,7 +2,7 @@
   "name": "technical-library",
   "version": "0.1.0",
   "private": true,
-  "description": "Technical Library — PDF/OCR storage and search for regulations and standards",
+  "description": "Technical Library — universal PDF/OCR storage and search by direction",
   "type": "commonjs",
   "scripts": {
     "dev": "tsx watch src/index.ts",

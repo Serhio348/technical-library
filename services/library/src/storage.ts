@@ -32,11 +32,14 @@ import {
 import { assessPdfIndexStatus, resolveIndexDisplay, type TextIndexStatus } from "./indexStatus.js";
 import { env } from "./config.js";
 
-export type InstallationMeta = {
+export type DirectionMeta = {
   slug: string;
   title: string;
   created_at: string;
 };
+
+/** @deprecated используйте DirectionMeta */
+export type InstallationMeta = DirectionMeta;
 
 export type LibraryFileEntry = {
   name: string;
@@ -115,11 +118,12 @@ function metaPath(root: string, slug: string): string {
   return resolveUnderRoot(root, slug, "_meta.json");
 }
 
-async function writeInstallationMeta(root: string, meta: InstallationMeta): Promise<void> {
+async function writeDirectionMeta(root: string, meta: DirectionMeta): Promise<void> {
   await writeFile(metaPath(root, meta.slug), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
 }
 
-export async function listInstallations(root: string): Promise<InstallationMeta[]> {
+/** Список направлений — каждая папка верхнего уровня в LIBRARY_ROOT (slug латиницей). */
+export async function listDirections(root: string): Promise<DirectionMeta[]> {
   await mkdir(root, { recursive: true });
   const entries = await readdir(root, { withFileTypes: true });
   const out: InstallationMeta[] = [];
@@ -133,7 +137,9 @@ export async function listInstallations(root: string): Promise<InstallationMeta[
   return out.sort((a, b) => a.title.localeCompare(b.title, "ru"));
 }
 
-export async function readInstallationMeta(root: string, slug: string): Promise<InstallationMeta> {
+export const listInstallations = listDirections;
+
+export async function readDirectionMeta(root: string, slug: string): Promise<DirectionMeta> {
   try {
     const raw = await readFile(metaPath(root, slug), "utf8");
     const parsed = JSON.parse(raw) as { title?: string; created_at?: string };
@@ -149,29 +155,35 @@ export async function readInstallationMeta(root: string, slug: string): Promise<
   }
 }
 
-export async function createInstallation(
+export const readInstallationMeta = readDirectionMeta;
+
+export async function createDirection(
   root: string,
   slug: string,
   title: string,
-): Promise<InstallationMeta> {
+): Promise<DirectionMeta> {
   const installRoot = resolveUnderRoot(root, slug);
   await mkdir(installRoot, { recursive: true });
-  const meta: InstallationMeta = {
+  const meta: DirectionMeta = {
     slug,
     title: title.trim() || slug,
     created_at: new Date().toISOString(),
   };
-  await writeInstallationMeta(root, meta);
+  await writeDirectionMeta(root, meta);
   return meta;
 }
 
-export async function ensureInstallation(root: string, slug: string, title: string): Promise<void> {
+export const createInstallation = createDirection;
+
+export async function ensureDirection(root: string, slug: string, title: string): Promise<void> {
   try {
     await stat(resolveUnderRoot(root, slug));
   } catch {
-    await createInstallation(root, slug, title);
+    await createDirection(root, slug, title);
   }
 }
+
+export const ensureInstallation = ensureDirection;
 
 export async function createSubfolder(
   root: string,

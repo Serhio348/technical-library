@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { env, resolvedDefaultLibraryPath } from "./config.js";
+import { env, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
 
 const app = express();
@@ -8,12 +8,13 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "256kb" }));
 
 app.get("/health", (_req, res) => {
-  const defaultPath = resolvedDefaultLibraryPath();
+  const defaultScope = resolvedDefaultScopePath();
   res.json({
     status: "ok",
+    service: "technical-library",
     root: env.LIBRARY_ROOT,
-    default_slug: env.INSTALLATION_SLUG,
-    ...(defaultPath ? { default_path: defaultPath } : {}),
+    ...(env.DEFAULT_DIRECTION_SLUG ? { default_direction: env.DEFAULT_DIRECTION_SLUG } : {}),
+    ...(defaultScope ? { default_scope_path: defaultScope } : {}),
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
   });
 });
@@ -31,7 +32,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
 const server = app.listen(env.LIBRARY_PORT, () => {
   console.log(`technical-library listening on :${env.LIBRARY_PORT}`);
   console.log(`library root: ${env.LIBRARY_ROOT}`);
-  console.log(`default collection: ${env.INSTALLATION_SLUG}`);
 });
 
 function shutdown(signal: string): void {

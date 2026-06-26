@@ -1,78 +1,71 @@
 # Technical Library
 
-Хранилище нормативной и технической документации: **PDF/DOC → текст → OCR → поиск для ИИ**.
+Универсальная библиотека нормативной и технической документации: **PDF/DOC → текст → OCR → поиск для ИИ**.
 
-Отдельный проект от [osmos-modbus-service](https://github.com/Serhio348/osmos-modbus-service).  
-Предназначен для законов, правил, ГОСТ/СП, ТКП, инструкций по **газоснабжению**, **электроснабжению**, **охране труда**, бухгалтерским классификаторам и т.п.
+Пользователь (или Telegram-bot) **сам создаёт направления** (газ, электro, охрана труда, бухгалтерия…) и **подпапки** для подвидов внутри направления.
 
-Telegram-бот и другие клиенты подключаются через REST API.
+Отдельный проект от [osmos-modbus-service](https://github.com/Serhio348/osmos-modbus-service).
 
-## Возможности
+## Модель данных
 
-- Загрузка PDF, DOC/DOCX, MD, TXT, JPEG, PNG
-- Извлечение текста: `pdf-parse` + **Tesseract OCR** (rus+eng) для сканов
-- Sidecar-индекс: `*.extracted.txt`, `*.extracted.pages.json`, `*.library.json`
-- API: папки, upload, catalog, search, **context** для LLM
-- Типы документов: law, standard, tkp, regulation, instruction, classifier
+| Уровень | Пример | API |
+|---------|--------|-----|
+| **Направление** | `gas` → «Газоснабжение» | `POST /api/library/directions` |
+| **Подвид (папка)** | `gas/tkp`, `gas/Приказы` | `POST /api/library/directions/gas/folders` |
+| **Документ** | PDF в подпапке | `POST .../directions/gas/upload` |
 
-## Структура
+Фиксированного корня `regulations` **нет** — библиотека начинается пустой.
 
-```
-technical-library/
-  services/library/     # HTTP-сервис :3021
-  data/library/         # файлы на диске (volume)
-  docs/PLAN.md
-  docker-compose.yml
-```
-
-Пример данных:
+## Структура на диске
 
 ```
 data/library/
-  regulations/
-    gas/
-    electro/
-    ohrana-truda/
-    buhgalteriya/
+  gas/
+    _meta.json
+    tkp/
+    zakonodatelstvo/
+  electro/
+    gost/
+  ohrana-truda/
 ```
 
-## Быстрый старт (локально)
+Slug направления — **латиница** (`gas`, `ohrana-truda`). Название для людей — в `_meta.json` (`title`).
+
+## Быстрый старт
 
 ```bash
 cp .env.example .env
 cd services/library && npm ci && npm run dev
-```
-
-```bash
 curl http://127.0.0.1:3021/health
+curl http://127.0.0.1:3021/api/library/directions
 ```
 
-## Docker (VPS)
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
-
-Порт по умолчанию **3021** (не конфликтует с osmos-doc-library на 3020).
-
-## API
+## API (основное)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `/health` | Статус |
-| GET | `/api/library/installations` | Коллекции |
-| GET | `/api/library/installations/:slug/tree` | Дерево файлов |
-| GET | `/api/library/installations/:slug/catalog` | Каталог с типами |
-| POST | `/api/library/installations/:slug/upload` | Upload (secret) |
-| GET | `/api/library/installations/:slug/context?q=` | Контекст для ИИ |
-| POST | `/api/library/installations/:slug/reindex` | Переиндекс OCR |
+| GET | `/api/library/directions` | Список направлений |
+| POST | `/api/library/directions` | Создать направление `{ slug, title }` |
+| GET | `/api/library/directions/:slug/tree?path=` | Дерево папок и файлов |
+| POST | `/api/library/directions/:slug/folders` | Подпапка `{ path }` |
+| POST | `/api/library/directions/:slug/upload` | Upload PDF |
+| GET | `/api/library/directions/:slug/context?q=` | Контекст для LLM |
+| POST | `/api/library/directions/:slug/reindex` | Переиндекс OCR |
+
+> `/api/library/installations/*` — устаревший alias тех же маршрутов.
+
+## Docker
+
+```bash
+docker compose up -d --build
+```
+
+Порт **3021**.
+
+## Типы документов
+
+`law`, `standard`, `tkp`, `regulation`, `instruction`, `classifier`, `other` — см. `*.library.json`.
 
 ## Связь с osmos
 
-- **Общий VPS** — да, разные compose и volume.
-- **Общий контейнер** — нет: osmos = оборудование, Technical Library = нормативка.
-
-## Лицензия
-
-Private / по согласованию с владельцем репозитория.
+Разные репозитории, один VPS возможен: osmos `:3020`, Technical Library `:3021`.

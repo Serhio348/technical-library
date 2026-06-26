@@ -2,20 +2,19 @@ import { Router } from "express";
 import multer from "multer";
 import { createReadStream } from "fs";
 import { stat } from "fs/promises";
-import { env, resolvedDefaultLibraryPath } from "./config.js";
+import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
   buildLibraryContextForQuery,
-  createInstallation,
+  createDirection,
   createSubfolder,
   deleteFile,
   deleteSubfolder,
-  ensureInstallation,
   getTree,
-  listInstallations,
+  listDirections,
   listExtractedDocuments,
   readExtractedText,
   readExtractedTextMeta,
@@ -48,28 +47,29 @@ function parseCsvQuery(value: unknown): string[] {
     .filter(Boolean);
 }
 
-export function createLibraryRouter(): Router {
-  const router = Router();
-  const root = env.LIBRARY_ROOT;
+function listDirectionsPayload() {
+  const defaultScope = resolvedDefaultScopePath();
+  return {
+    ...(env.DEFAULT_DIRECTION_SLUG ? { default_direction: env.DEFAULT_DIRECTION_SLUG } : {}),
+    ...(defaultScope ? { default_scope_path: defaultScope } : {}),
+  };
+}
 
-  void ensureInstallation(root, env.INSTALLATION_SLUG, env.INSTALLATION_TITLE);
-
-  router.get("/installations", async (_req, res) => {
+function mountDirectionRoutes(router: Router, root: string, basePath: string): void {
+  router.get(basePath, async (_req, res) => {
     try {
-      await ensureInstallation(root, env.INSTALLATION_SLUG, env.INSTALLATION_TITLE);
-      const items = await listInstallations(root);
-      const defaultPath = resolvedDefaultLibraryPath();
+      const directions = await listDirections(root);
       res.json({
-        items,
-        default_slug: env.INSTALLATION_SLUG,
-        ...(defaultPath ? { default_path: defaultPath } : {}),
+        directions,
+        ...listDirectionsPayload(),
+        ...(basePath === "/installations" ? { items: directions, deprecated: "use /directions" } : {}),
       });
     } catch {
       res.status(500).json({ error: "library_unavailable" });
     }
   });
 
-  router.post("/installations", requireLibrarySecret, async (req, res) => {
+  router.post(basePath, requireLibrarySecret, async (req, res) => {
     const slug = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : slug;
     if (!isValidSlug(slug)) {
@@ -77,14 +77,14 @@ export function createLibraryRouter(): Router {
       return;
     }
     try {
-      const item = await createInstallation(root, slug, title);
-      res.status(201).json({ item });
+      const direction = await createDirection(root, slug, title);
+      res.status(201).json({ direction, item: direction });
     } catch {
       res.status(500).json({ error: "library_unavailable" });
     }
   });
 
-  router.get("/installations/:slug/tree", async (req, res) => {
+  router.get(`${basePath}/:slug/tree`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.query.path === "string" ? req.query.path : "";
     if (!isValidSlug(slug) || !isValidRelativePath(pathParam)) {
@@ -93,7 +93,7 @@ export function createLibraryRouter(): Router {
     }
     try {
       const tree = await getTree(root, slug, pathParam);
-      res.json(tree);
+      res.json({ ...tree, direction: slug });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "invalid_slug" || msg === "invalid_path" || msg === "path_traversal") {
@@ -104,23 +104,22 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.get("/installations/:slug/catalog", async (req, res) => {
+  router.get(`${basePath}/:slug/catalog`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
-    const pathParam =
-      typeof req.query.path === "string" ? req.query.path : resolvedDefaultLibraryPath();
+    const pathParam = typeof req.query.path === "string" ? req.query.path : "";
     if (!isValidSlug(slug) || !isValidRelativePath(pathParam)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
     try {
       const items = await listDocumentCatalog(root, slug, pathParam);
-      res.json({ items, scope_path: pathParam || null });
+      res.json({ items, direction: slug, scope_path: pathParam || null });
     } catch {
       res.status(500).json({ error: "library_unavailable" });
     }
   });
 
-  router.put("/installations/:slug/catalog", requireLibrarySecret, async (req, res) => {
+  router.put(`${basePath}/:slug/catalog`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.body?.path === "string" ? req.body.path.trim() : "";
     if (!isValidSlug(slug) || !pathParam || !isValidRelativePath(pathParam)) {
@@ -156,7 +155,7 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.post("/installations/:slug/folders", requireLibrarySecret, async (req, res) => {
+  router.post(`${basePath}/:slug/folders`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.body?.path === "string" ? req.body.path.trim() : "";
     if (!isValidSlug(slug) || !pathParam || !isValidRelativePath(pathParam)) {
@@ -171,7 +170,7 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.delete("/installations/:slug/folders", requireLibrarySecret, async (req, res) => {
+  router.delete(`${basePath}/:slug/folders`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.query.path === "string" ? req.query.path.trim() : "";
     if (!isValidSlug(slug) || !pathParam || !isValidRelativePath(pathParam)) {
@@ -191,55 +190,50 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.post(
-    "/installations/:slug/upload",
-    requireLibrarySecret,
-    upload.array("files", 10),
-    async (req, res) => {
-      const slug = routeSlug(req.params.slug);
-      const relDir = typeof req.body?.path === "string" ? req.body.path.trim() : "";
-      if (!isValidSlug(slug) || !isValidRelativePath(relDir)) {
-        res.status(400).json({ error: "invalid_params" });
-        return;
-      }
-      const files = (req.files as Express.Multer.File[] | undefined) ?? [];
-      const docTypeRaw = typeof req.body?.doc_type === "string" ? req.body.doc_type.trim() : "";
-      if (docTypeRaw && !isValidDocumentType(docTypeRaw)) {
-        res.status(400).json({ error: "invalid_doc_type" });
-        return;
-      }
-      if (files.length === 0) {
-        res.status(400).json({ error: "no_files" });
-        return;
-      }
-      try {
-        const saved = [];
-        for (const file of files) {
-          const entry = await writeUploadedFile(root, slug, relDir, file.originalname, file.buffer);
-          if (docTypeRaw) {
-            const current = await readCatalogEntry(root, slug, entry.path);
-            await writeCatalogEntry(root, slug, { ...current, doc_type: docTypeRaw });
-          }
-          saved.push(entry);
-          void indexFileText(root, slug, entry.path).catch((err) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[library] index after upload failed path=${entry.path}:`, msg);
-          });
+  router.post(`${basePath}/:slug/upload`, requireLibrarySecret, upload.array("files", 10), async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    const relDir = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+    if (!isValidSlug(slug) || !isValidRelativePath(relDir)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    const docTypeRaw = typeof req.body?.doc_type === "string" ? req.body.doc_type.trim() : "";
+    if (docTypeRaw && !isValidDocumentType(docTypeRaw)) {
+      res.status(400).json({ error: "invalid_doc_type" });
+      return;
+    }
+    if (files.length === 0) {
+      res.status(400).json({ error: "no_files" });
+      return;
+    }
+    try {
+      const saved = [];
+      for (const file of files) {
+        const entry = await writeUploadedFile(root, slug, relDir, file.originalname, file.buffer);
+        if (docTypeRaw) {
+          const current = await readCatalogEntry(root, slug, entry.path);
+          await writeCatalogEntry(root, slug, { ...current, doc_type: docTypeRaw });
         }
-        res.status(201).json({ items: saved, indexing: "background" });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "";
-        if (msg === "invalid_file_type") {
-          res.status(400).json({ error: "invalid_file_type" });
-          return;
-        }
-        console.error("[library] upload failed:", msg || e);
-        res.status(500).json({ error: "library_unavailable" });
+        saved.push(entry);
+        void indexFileText(root, slug, entry.path).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[library] index after upload failed path=${entry.path}:`, msg);
+        });
       }
-    },
-  );
+      res.status(201).json({ items: saved, indexing: "background" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "invalid_file_type") {
+        res.status(400).json({ error: "invalid_file_type" });
+        return;
+      }
+      console.error("[library] upload failed:", msg || e);
+      res.status(500).json({ error: "library_unavailable" });
+    }
+  });
 
-  router.get("/installations/:slug/file", async (req, res) => {
+  router.get(`${basePath}/:slug/file`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const relFile = typeof req.query.path === "string" ? req.query.path.trim() : "";
     if (!isValidSlug(slug) || !relFile) {
@@ -258,7 +252,7 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.delete("/installations/:slug/file", requireLibrarySecret, async (req, res) => {
+  router.delete(`${basePath}/:slug/file`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const relFile = typeof req.query.path === "string" ? req.query.path.trim() : "";
     if (!isValidSlug(slug) || !relFile) {
@@ -273,7 +267,7 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.get("/installations/:slug/search", async (req, res) => {
+  router.get(`${basePath}/:slug/search`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const q = typeof req.query.q === "string" ? req.query.q : "";
     if (!isValidSlug(slug)) {
@@ -295,15 +289,14 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.get("/installations/:slug/context", async (req, res) => {
+  router.get(`${basePath}/:slug/context`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const q = typeof req.query.q === "string" ? req.query.q : "";
     const folders = parseCsvQuery(req.query.folders);
     const documents = parseCsvQuery(req.query.documents);
     const docTypes = parseCsvQuery(req.query.doc_types);
     const boostTerms = parseCsvQuery(req.query.boost_terms);
-    const scopePath =
-      typeof req.query.scope_path === "string" ? req.query.scope_path : resolvedDefaultLibraryPath();
+    const scopePath = typeof req.query.scope_path === "string" ? req.query.scope_path : "";
     const maxCharsRaw =
       typeof req.query.max_chars === "string" && req.query.max_chars.trim()
         ? Number.parseInt(req.query.max_chars, 10)
@@ -325,13 +318,13 @@ export function createLibraryRouter(): Router {
         boost_terms: boostTerms,
         scope_path: scopePath,
       });
-      res.json({ items });
+      res.json({ items, direction: slug });
     } catch {
       res.status(500).json({ error: "library_unavailable" });
     }
   });
 
-  router.get("/installations/:slug/extracted-documents", async (req, res) => {
+  router.get(`${basePath}/:slug/extracted-documents`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const maxCharsRaw =
       typeof req.query.max_chars === "string" && req.query.max_chars.trim()
@@ -350,7 +343,7 @@ export function createLibraryRouter(): Router {
     }
   });
 
-  router.post("/installations/:slug/reindex", requireLibrarySecret, async (req, res) => {
+  router.post(`${basePath}/:slug/reindex`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const relPath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
     if (!isValidSlug(slug) || !isValidRelativePath(relPath)) {
@@ -360,20 +353,28 @@ export function createLibraryRouter(): Router {
     void reindexInstallation(root, slug, relPath)
       .then((result) => {
         console.log(
-          `[library] reindex done slug=${slug} path=${relPath || "/"} processed=${result.processed} updated=${result.updated} failed=${result.failed}`,
+          `[library] reindex done direction=${slug} path=${relPath || "/"} processed=${result.processed} updated=${result.updated} failed=${result.failed}`,
         );
       })
       .catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[library] reindex failed slug=${slug} path=${relPath || "/"}:`, msg || e);
+        console.error(`[library] reindex failed direction=${slug} path=${relPath || "/"}:`, msg || e);
       });
     res.status(202).json({
       ok: true,
       status: "running",
       message:
-        "Переиндексация запущена в фоне (OCR может занять 10–20 мин). Следите: docker logs -f osmos-doc-library",
+        "Переиндексация запущена в фоне (OCR может занять 10–20 мин). Следите: docker logs -f technical-library",
     });
   });
+}
+
+export function createLibraryRouter(): Router {
+  const router = Router();
+  const root = env.LIBRARY_ROOT;
+
+  mountDirectionRoutes(router, root, "/directions");
+  mountDirectionRoutes(router, root, "/installations");
 
   return router;
 }
