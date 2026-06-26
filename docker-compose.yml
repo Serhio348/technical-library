@@ -1,0 +1,16 @@
+services:
+  technical-library:
+    build: ./services/library
+    container_name: technical-library
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LIBRARY_PORT: 3021
+      LIBRARY_ROOT: /data/library
+      INSTALLATION_SLUG: ${INSTALLATION_SLUG:-regulations}
+      INSTALLATION_LIBRARY_PATH: ${INSTALLATION_LIBRARY_PATH:-}
+    volumes:
+      - ./data/library:/data/library
+    ports:
+      - "127.0.0.1:3021:3021"

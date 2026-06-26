@@ -1,0 +1,8 @@
+# Секреты и настройки — не коммитить
+.env
+node_modules/
+dist/
+data/library/**/*
+!data/library/README.md
+*.log
+.DS_Store
