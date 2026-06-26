@@ -14,6 +14,11 @@ describe("photo OCR cleanup", () => {
 
   it("rejects unusable OCR output", () => {
     expect(isPhotoOcrUsable("工力漢字テスト")).toBe(false);
-    expect(isPhotoOcrUsable("Какой вариант ответа верный?")).toBe(true);
+    expect(isPhotoOcrUsable("аЦИ падает! се т")).toBe(false);
+    expect(isPhotoOcrUsable("Какой вариант ответа верный?")).toBe(false);
+    const quiz =
+      "Вопрос № 5 из 23\nРазрешается ли надевать, снимать и поправлять на ходу приводные ремни теплоустановок?\n" +
+      "1. Разрешается при использовании защитных рукавиц.\n2. Не разрешается.";
+    expect(isPhotoOcrUsable(quiz)).toBe(true);
   });
 });

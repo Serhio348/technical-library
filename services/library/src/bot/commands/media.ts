@@ -24,7 +24,9 @@ async function handleImageBuffer(
       const recognized = await extractTextFromImageBuffer(buffer);
       if (!isPhotoOcrUsable(recognized)) {
         await ctx.reply(
-          "На фото не найден текст. Снимите ближе при хорошем свете или добавьте подпись к фото.",
+          "На фото не удалось прочитать текст.\n\n" +
+            "• Не снимайте экран монитора — лучше скриншот (PNG) отправить файлом\n" +
+            "• Держите телефон прямо, без бликов",
           mainKeyboard(),
         );
         return;
