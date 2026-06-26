@@ -5,12 +5,15 @@ import {
   FolderPlus,
   KeyRound,
   Layers,
+  MoreHorizontal,
   Plus,
+  RefreshCw,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IndexProgressPanel } from "./components/IndexProgressPanel";
 import {
   createDirection,
   createFolder,
@@ -18,19 +21,23 @@ import {
   deleteFolder,
   directionHue,
   errorMessage,
+  fetchActiveIndexJob,
   fetchCatalog,
   fetchDirections,
   fetchHealth,
+  fetchIndexJobStatus,
   fetchTree,
   fileUrl,
   formatBytes,
   formatDate,
   getLibrarySecret,
   setLibrarySecret,
+  startReindexFiles,
+  startReindexFolder,
   updateDocType,
   uploadFiles,
 } from "./api";
-import type { Direction, DocumentType, LibraryTree } from "./types";
+import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
 import { DOC_TYPE_LABELS, DOC_TYPE_OPTIONS } from "./types";
 import { ensureUniqueSlug } from "./slugify";
 
@@ -53,6 +60,7 @@ export function App(): React.ReactElement {
   const [secretDraft, setSecretDraft] = useState(getLibrarySecret());
   const [createTitle, setCreateTitle] = useState("");
   const [maxFileMb, setMaxFileMb] = useState(200);
+  const [indexJob, setIndexJob] = useState<IndexJob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeDirection = directions.find((d) => d.slug === activeSlug);
@@ -94,7 +102,39 @@ export function App(): React.ReactElement {
     if (view !== "direction" || !activeSlug) return;
     void reloadTree(activeSlug, currentPath).catch(() => setError("Не удалось загрузить папку."));
     void reloadCatalog(activeSlug).catch(() => undefined);
+    void fetchActiveIndexJob(activeSlug, currentPath)
+      .then((job) => {
+        if (job) setIndexJob(job);
+      })
+      .catch(() => undefined);
   }, [view, activeSlug, currentPath, reloadTree, reloadCatalog]);
+
+  useEffect(() => {
+    if (!indexJob || indexJob.status !== "running" || !activeSlug) return;
+    const jobId = indexJob.job_id;
+    const timer = window.setInterval(() => {
+      void fetchIndexJobStatus(activeSlug, jobId)
+        .then((job) => {
+          setIndexJob(job);
+          if (job.status !== "running") {
+            void reloadTree(activeSlug, currentPath).catch(() => undefined);
+            void reloadCatalog(activeSlug).catch(() => undefined);
+          }
+        })
+        .catch(() => undefined);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [indexJob?.job_id, indexJob?.status, activeSlug, currentPath, reloadTree, reloadCatalog]);
+
+  useEffect(() => {
+    if (!indexJob || (indexJob.status !== "done" && indexJob.status !== "failed")) return;
+    const timer = window.setTimeout(() => setIndexJob(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [indexJob?.job_id, indexJob?.status]);
+
+  const trackIndexJob = useCallback(async (job: IndexJob) => {
+    setIndexJob(job);
+  }, []);
 
   const openDirection = (slug: string): void => {
     setActiveSlug(slug);
@@ -141,17 +181,37 @@ export function App(): React.ReactElement {
     setBusy(true);
     setError(null);
     try {
-      await uploadFiles(activeSlug, currentPath, [...files], uploadDocType || undefined);
+      const result = await uploadFiles(activeSlug, currentPath, [...files], uploadDocType || undefined);
+      if (result.job_id) {
+        await trackIndexJob(await fetchIndexJobStatus(activeSlug, result.job_id));
+      }
       await reloadTree(activeSlug, currentPath);
       await reloadCatalog(activeSlug);
-      window.setTimeout(() => {
-        void reloadTree(activeSlug, currentPath).catch(() => undefined);
-      }, 12_000);
     } catch (e) {
       setError(errorMessage(e instanceof Error ? e.message : "error"));
     } finally {
       setBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleReindexFolder = async (): Promise<void> => {
+    if (!activeSlug) return;
+    setError(null);
+    try {
+      await trackIndexJob(await startReindexFolder(activeSlug, currentPath));
+    } catch (e) {
+      setError(errorMessage(e instanceof Error ? e.message : "error"));
+    }
+  };
+
+  const handleReindexFile = async (filePath: string): Promise<void> => {
+    if (!activeSlug) return;
+    setError(null);
+    try {
+      await trackIndexJob(await startReindexFiles(activeSlug, filePath, [filePath]));
+    } catch (e) {
+      setError(errorMessage(e instanceof Error ? e.message : "error"));
     }
   };
 
@@ -264,6 +324,10 @@ export function App(): React.ReactElement {
                 setError(errorMessage(e instanceof Error ? e.message : "error"));
               }
             }}
+            indexJob={indexJob}
+            indexRunning={indexJob?.status === "running"}
+            onReindexFolder={() => void handleReindexFolder()}
+            onReindexFile={(path) => void handleReindexFile(path)}
           />
         ) : (
           <div className="tl-state">Направление не найдено.</div>
@@ -436,6 +500,10 @@ function DirectionView({
   onDeleteFolder,
   onDeleteFile,
   onDocTypeChange,
+  indexJob,
+  indexRunning,
+  onReindexFolder,
+  onReindexFile,
 }: {
   direction: Direction;
   tree: LibraryTree;
@@ -455,9 +523,24 @@ function DirectionView({
   onDeleteFolder: (path: string, name: string) => void;
   onDeleteFile: (path: string) => void;
   onDocTypeChange: (path: string, docType: DocumentType) => void;
+  indexJob: IndexJob | null;
+  indexRunning: boolean;
+  onReindexFolder: () => void;
+  onReindexFile: (path: string) => void;
 }): React.ReactElement {
   const hue = directionHue(direction.slug);
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [menuOpen]);
 
   return (
     <div className="tl-workspace" style={{ "--dir-hue": hue } as React.CSSProperties}>
@@ -546,14 +629,42 @@ function DirectionView({
             <button
               type="button"
               className="tl-btn tl-btn--primary"
-              disabled={busy}
+              disabled={busy || indexRunning}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload size={16} />
-              {busy ? "Загрузка…" : "Загрузить"}
+              {busy ? "Загрузка…" : indexRunning ? "Индексация…" : "Загрузить"}
             </button>
+            <div className="tl-menu-wrap" ref={menuRef}>
+              <button
+                type="button"
+                className="tl-icon-btn"
+                title="Дополнительно"
+                onClick={() => setMenuOpen((v) => !v)}
+              >
+                <MoreHorizontal size={18} />
+              </button>
+              {menuOpen ? (
+                <div className="tl-menu">
+                  <button
+                    type="button"
+                    className="tl-menu__item"
+                    disabled={indexRunning}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onReindexFolder();
+                    }}
+                  >
+                    <RefreshCw size={15} />
+                    Переиндексировать папку
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        <IndexProgressPanel job={indexJob} />
 
         {isEmpty ? (
           <div className="tl-empty">
@@ -608,6 +719,21 @@ function DirectionView({
                     <span className="tl-pill tl-pill--warn" title={file.text_index_note ?? ""}>
                       ИИ~
                     </span>
+                  ) : (
+                    <span className="tl-pill tl-pill--muted" title="Текст ещё не извлечён">
+                      —
+                    </span>
+                  )}
+                  {file.text_index_status !== "ready" ? (
+                    <button
+                      type="button"
+                      className="tl-icon-btn"
+                      title="Переиндексировать файл (OCR)"
+                      disabled={indexRunning}
+                      onClick={() => onReindexFile(file.path)}
+                    >
+                      <RefreshCw size={15} />
+                    </button>
                   ) : null}
                   <button
                     type="button"

@@ -51,6 +51,23 @@ export type DirectionsResponse = {
   default_scope_path?: string;
 };
 
+export type IndexJob = {
+  job_id: string;
+  slug: string;
+  scope_path: string;
+  status: "running" | "done" | "failed";
+  phase: "scanning" | "indexing";
+  total: number;
+  processed: number;
+  updated: number;
+  failed: number;
+  percent: number;
+  current_file: string | null;
+  elapsed_seconds: number;
+  eta_seconds: number | null;
+  message: string;
+};
+
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   law: "Закон",
   standard: "ГОСТ / СП",

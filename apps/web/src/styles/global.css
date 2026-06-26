@@ -631,3 +631,131 @@ code {
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+.tl-index-panel {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.tl-index-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tl-index-panel__title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tl-menu-wrap {
+  position: relative;
+}
+
+.tl-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  padding: 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.tl-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.88rem;
+}
+
+.tl-menu__item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tl-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tl-pill--muted {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+}
+
+.tl-index-panel__status {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.tl-index-panel__status--running {
+  color: hsl(var(--dir-hue, 38) 80% 70%);
+}
+
+.tl-index-panel__status--done {
+  color: #6ee7b7;
+}
+
+.tl-index-panel__status--failed {
+  color: #fca5a5;
+}
+
+.tl-index-panel__body {
+  margin-top: 0.65rem;
+}
+
+.tl-index-panel__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.tl-index-panel__bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, hsl(var(--dir-hue, 38) 70% 48%), hsl(var(--dir-hue, 38) 85% 62%));
+  transition: width 0.35s ease;
+}
+
+.tl-index-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.tl-index-panel__eta {
+  white-space: nowrap;
+}
+
+.tl-spin {
+  animation: tl-spin 1s linear infinite;
+}
+
+@keyframes tl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

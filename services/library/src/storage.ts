@@ -853,73 +853,11 @@ export async function reindexInstallation(
   slug: string,
   relPath = "",
 ): Promise<ReindexResult> {
-  const installRoot = resolveUnderRoot(root, slug);
-  const absDir = relPath ? resolveUnderRoot(root, slug, relPath) : installRoot;
-  await mkdir(absDir, { recursive: true });
+  const paths = await listIndexableFiles(root, slug, relPath);
   const items: ReindexResultItem[] = [];
-
-  async function walk(dir: string): Promise<void> {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "readdir_failed";
-      throw new Error(`reindex_readdir_failed:${msg}`);
-    }
-    for (const entry of entries) {
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!entry.name.startsWith(".")) {
-          try {
-            await walk(abs);
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : "walk_failed";
-            items.push({
-              path: relative(installRoot, abs).replace(/\\/g, "/"),
-              ok: false,
-              extractor: null,
-              chars: 0,
-              error: msg,
-            });
-          }
-        }
-        continue;
-      }
-      if (
-        entry.name.endsWith(".extracted.txt") ||
-        entry.name.endsWith(".extracted.meta.json") ||
-        entry.name.endsWith(".extracted.pages.json")
-      ) {
-        continue;
-      }
-      if (!entry.isFile() || !isAllowedFilename(entry.name)) continue;
-
-      const rel = relative(installRoot, abs).replace(/\\/g, "/");
-      try {
-        const outcome = await extractTextFromFile(abs, rel);
-        await removeExtractedSidecar(root, slug, rel);
-        await writeExtractedSidecar(root, slug, rel, outcome);
-        items.push({
-          path: rel,
-          ok: true,
-          extractor: outcome.meta?.extractor ?? null,
-          chars: outcome.text?.length ?? 0,
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "reindex_failed";
-        items.push({
-          path: rel,
-          ok: false,
-          extractor: null,
-          chars: 0,
-          error: msg,
-        });
-      }
-    }
+  for (const rel of paths) {
+    items.push(await reindexSingleFile(root, slug, rel));
   }
-
-  await walk(absDir);
-  items.sort((a, b) => a.path.localeCompare(b.path, "ru"));
   const updated = items.filter((item) => item.ok && item.chars > 0).length;
   const failed = items.filter((item) => !item.ok).length;
   return {
@@ -929,3 +867,64 @@ export async function reindexInstallation(
     items,
   };
 }
+
+export async function listIndexableFiles(root: string, slug: string, relPath = ""): Promise<string[]> {
+  const installRoot = resolveUnderRoot(root, slug);
+  const absDir = relPath ? resolveUnderRoot(root, slug, relPath) : installRoot;
+  await mkdir(absDir, { recursive: true });
+  const paths: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const abs = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith(".")) await walk(abs);
+        continue;
+      }
+      if (
+        entry.name.endsWith(".extracted.txt") ||
+        entry.name.endsWith(".extracted.meta.json") ||
+        entry.name.endsWith(".extracted.pages.json") ||
+        entry.name.endsWith(".library.json")
+      ) {
+        continue;
+      }
+      if (!entry.isFile() || !isAllowedFilename(entry.name)) continue;
+      paths.push(relative(installRoot, abs).replace(/\\/g, "/"));
+    }
+  }
+
+  await walk(absDir);
+  return paths.sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+export async function reindexSingleFile(
+  root: string,
+  slug: string,
+  rel: string,
+): Promise<ReindexResultItem> {
+  const abs = resolveFilePath(root, slug, rel);
+  try {
+    const outcome = await extractTextFromFile(abs, rel);
+    await removeExtractedSidecar(root, slug, rel);
+    await writeExtractedSidecar(root, slug, rel, outcome);
+    await ensureCatalogSidecar(root, slug, rel);
+    return {
+      path: rel,
+      ok: true,
+      extractor: outcome.meta?.extractor ?? null,
+      chars: outcome.text?.length ?? 0,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "reindex_failed";
+    return {
+      path: rel,
+      ok: false,
+      extractor: null,
+      chars: 0,
+      error: msg,
+    };
+  }
+}
+

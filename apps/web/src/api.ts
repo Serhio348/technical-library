@@ -3,6 +3,7 @@ import type {
   DirectionsResponse,
   DocumentCatalogEntry,
   DocumentType,
+  IndexJob,
   LibraryTree,
 } from "./types";
 
@@ -91,12 +92,61 @@ export async function uploadFiles(
   path: string,
   files: File[],
   docType?: DocumentType,
-): Promise<void> {
+): Promise<{ job_id?: string }> {
   const form = new FormData();
   form.set("path", path);
   if (docType) form.set("doc_type", docType);
   for (const file of files) form.append("files", file);
-  await api(`/api/library/directions/${encodeURIComponent(slug)}/upload`, { form });
+  return api(`/api/library/directions/${encodeURIComponent(slug)}/upload`, { form });
+}
+
+export async function startReindexFolder(slug: string, path: string): Promise<IndexJob> {
+  const data = await api<{ job_id: string; job?: IndexJob }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/reindex`,
+    { method: "POST", json: { path } },
+  );
+  if (data.job) return data.job;
+  return fetchIndexJobStatus(slug, data.job_id);
+}
+
+export async function startReindexFiles(
+  slug: string,
+  scopePath: string,
+  files: string[],
+): Promise<IndexJob> {
+  const data = await api<{ job_id: string; job?: IndexJob }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/reindex`,
+    { method: "POST", json: { path: scopePath, files, force: true } },
+  );
+  if (data.job) return data.job;
+  return fetchIndexJobStatus(slug, data.job_id);
+}
+
+export async function fetchIndexJobStatus(slug: string, jobId: string): Promise<IndexJob> {
+  const data = await api<{ job: IndexJob }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/reindex/status?job_id=${encodeURIComponent(jobId)}`,
+  );
+  return data.job;
+}
+
+export async function fetchActiveIndexJob(slug: string, path: string): Promise<IndexJob | null> {
+  try {
+    const data = await api<{ job: IndexJob }>(
+      `/api/library/directions/${encodeURIComponent(slug)}/reindex/status?path=${encodeURIComponent(path)}`,
+    );
+    return data.job;
+  } catch {
+    return null;
+  }
+}
+
+export function formatDuration(seconds: number | null): string {
+  if (seconds === null) return "оценка…";
+  if (seconds <= 0) return "скоро";
+  if (seconds < 60) return `${seconds} сек`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest > 0 ? `${minutes} мин ${rest} сек` : `${minutes} мин`;
 }
 
 export async function createFolder(slug: string, path: string): Promise<void> {
@@ -165,6 +215,10 @@ export function errorMessage(code: string): string {
       return "Файл слишком большой.";
     case "folder_not_empty":
       return "Папка не пустая — сначала удалите содержимое.";
+    case "index_job_running":
+      return "Индексация уже выполняется — дождитесь завершения.";
+    case "job_not_found":
+      return "Задача индексации не найдена.";
     default:
       return "Произошла ошибка. Попробуйте ещё раз.";
   }

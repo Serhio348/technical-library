@@ -6,6 +6,8 @@ import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
 import { ensureUniqueSlug } from "./slugify.js";
+import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
+import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
@@ -19,9 +21,7 @@ import {
   listExtractedDocuments,
   readExtractedText,
   readExtractedTextMeta,
-  reindexInstallation,
   resolveFilePath,
-  indexFileText,
   writeUploadedFile,
   searchInstallation,
   listDocumentCatalog,
@@ -223,6 +223,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
     try {
       const saved = [];
+      const savedPaths: string[] = [];
       for (const file of files) {
         const entry = await writeUploadedFile(root, slug, relDir, file.originalname, file.buffer);
         if (docTypeRaw) {
@@ -230,12 +231,10 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
           await writeCatalogEntry(root, slug, { ...current, doc_type: docTypeRaw });
         }
         saved.push(entry);
-        void indexFileText(root, slug, entry.path).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[library] index after upload failed path=${entry.path}:`, msg);
-        });
+        savedPaths.push(entry.path);
       }
-      res.status(201).json({ items: saved, indexing: "background" });
+      const jobId = startFilesIndexJob(root, slug, relDir, savedPaths, false);
+      res.status(201).json({ items: saved, indexing: "background", job_id: jobId });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "invalid_file_type") {
@@ -357,29 +356,70 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
+  router.get(`${basePath}/:slug/reindex/status`, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    const jobId = typeof req.query.job_id === "string" ? req.query.job_id.trim() : "";
+    const pathParam = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    if (!isValidSlug(slug)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    const job = jobId ? getIndexJob(jobId) : findRunningIndexJob(slug, pathParam);
+    if (!job || job.slug !== slug) {
+      res.status(404).json({ error: "job_not_found" });
+      return;
+    }
+    res.json({ job });
+  });
+
   router.post(`${basePath}/:slug/reindex`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const relPath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+    const filesRaw = req.body?.files;
+    const filePaths =
+      Array.isArray(filesRaw) && filesRaw.every((f) => typeof f === "string")
+        ? filesRaw.map((f) => f.trim()).filter(Boolean)
+        : [];
     if (!isValidSlug(slug) || !isValidRelativePath(relPath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
-    void reindexInstallation(root, slug, relPath)
-      .then((result) => {
-        console.log(
-          `[library] reindex done direction=${slug} path=${relPath || "/"} processed=${result.processed} updated=${result.updated} failed=${result.failed}`,
-        );
-      })
-      .catch((e) => {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[library] reindex failed direction=${slug} path=${relPath || "/"}:`, msg || e);
+    for (const filePath of filePaths) {
+      if (!isValidRelativePath(filePath)) {
+        res.status(400).json({ error: "invalid_params" });
+        return;
+      }
+    }
+    try {
+      const scopePath = filePaths.length === 1 ? filePaths[0]! : relPath;
+      const running = findRunningIndexJob(slug, scopePath);
+      if (running) {
+        res.status(202).json({ ok: true, status: "running", job_id: running.job_id, job: running });
+        return;
+      }
+      const jobId =
+        filePaths.length > 0
+          ? startFilesIndexJob(root, slug, scopePath, filePaths, true)
+          : startFolderReindexJob(root, slug, relPath);
+      const job = getIndexJob(jobId);
+      res.status(202).json({
+        ok: true,
+        status: "running",
+        job_id: jobId,
+        job,
+        message:
+          filePaths.length > 0
+            ? "Индексация файлов запущена."
+            : "Переиндексация папки запущена.",
       });
-    res.status(202).json({
-      ok: true,
-      status: "running",
-      message:
-        "Переиндексация запущена в фоне (OCR может занять 10–20 мин). Следите: docker logs -f technical-library",
-    });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "index_job_running") {
+        res.status(409).json({ error: "index_job_running" });
+        return;
+      }
+      res.status(500).json({ error: "library_unavailable" });
+    }
   });
 }
 
