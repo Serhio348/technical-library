@@ -9,7 +9,26 @@ export type DocumentPage = {
 
 export type DocumentContextOptions = {
   boostTerms?: string[];
+  /** Больше страниц/текста — для одного документа в папке или вопроса по разделу */
+  preferWide?: boolean;
 };
+
+/** Номера разделов/пунктов из вопроса — для поиска по ТКП/ГОСТ */
+export function extractSectionBoostTerms(query: string): string[] {
+  const terms: string[] = [];
+  for (const m of query.matchAll(/раздел\w*[^0-9]{0,24}(\d+(?:\.\d+)*)/gi)) {
+    const num = m[1]!;
+    terms.push(num, `${num}.`, `${num} `, `раздел ${num}`, `§ ${num}`);
+  }
+  for (const m of query.matchAll(/(?:глав\w*|пункт|§|п\.?\s*)\s*(\d+(?:\.\d+)*)/gi)) {
+    const num = m[1]!;
+    terms.push(num, `${num}.`, `${num} `);
+  }
+  for (const m of query.matchAll(/\b(\d{1,2})\s*(?:раздел|глав)/gi)) {
+    terms.push(m[1]!, `${m[1]!}.`);
+  }
+  return [...new Set(terms)];
+}
 
 const STOP_WORDS = new Set([
   "какие",
@@ -108,13 +127,20 @@ export function buildDocumentContext(
 ): string {
   const trimmed = fullText.trim();
   if (!trimmed) return "";
-  if (trimmed.length <= maxChars) return trimmed;
+  if (trimmed.length <= maxChars && !pages?.length) return trimmed;
 
   const terms = mergeQueryTerms(query, options.boostTerms);
-  if (terms.length === 0) return trimmed.slice(0, maxChars);
+  const preferWide = options.preferWide ?? false;
 
   if (pages && pages.length > 0) {
+    if (preferWide) {
+      return buildFromPagesWide(pages, terms, maxChars);
+    }
     return buildFromPages(pages, terms, maxChars);
+  }
+
+  if (preferWide || terms.length === 0) {
+    return trimmed.slice(0, maxChars);
   }
 
   return buildFromWindows(trimmed, terms, maxChars);
@@ -139,11 +165,7 @@ function buildFromPages(pages: DocumentPage[], terms: string[], maxChars: number
     .sort((a, b) => b.score - a.score || a.entry.page - b.entry.page);
 
   if (scored.length === 0) {
-    const fallback = pages
-      .slice(0, Math.min(4, pages.length))
-      .map((p) => `[стр. ${p.page}]\n${p.text.trim()}`)
-      .join("\n\n");
-    return fallback.slice(0, maxChars);
+    return fallbackPageSpread(pages, maxChars);
   }
 
   const chunks: string[] = [];
@@ -156,6 +178,81 @@ function buildFromPages(pages: DocumentPage[], terms: string[], maxChars: number
     used += block.length + 2;
   }
 
+  return chunks.join("\n\n").slice(0, maxChars);
+}
+
+/** Широкий контекст: релевантные страницы + соседние + заполнение по порядку */
+function buildFromPagesWide(pages: DocumentPage[], terms: string[], maxChars: number): string {
+  const byPage = new Map(pages.map((p) => [p.page, p]));
+  const scored = pages
+    .map((entry) => {
+      const normalized = normalizeForSearch(entry.text);
+      let score = scoreText(normalized, terms);
+      if (looksLikeTocHeavyText(entry.text, 1)) score *= 0.08;
+      return { entry, score };
+    })
+    .sort((a, b) => b.score - a.score || a.entry.page - b.entry.page);
+
+  const selected = new Set<number>();
+
+  for (const { entry, score } of scored) {
+    if (score <= 0 && selected.size >= 8) continue;
+    selected.add(entry.page);
+    if (score > 0) {
+      selected.add(entry.page - 1);
+      selected.add(entry.page + 1);
+    }
+    if (selected.size >= 24) break;
+  }
+
+  if (selected.size === 0) {
+    return fallbackPageSpread(pages, maxChars);
+  }
+
+  for (const entry of pages) {
+    if (selected.size >= 40) break;
+    if (!looksLikeTocHeavyText(entry.text, 1) || entry.page > 5) {
+      selected.add(entry.page);
+    }
+  }
+
+  const ordered = [...selected]
+    .sort((a, b) => a - b)
+    .map((n) => byPage.get(n))
+    .filter((p): p is DocumentPage => Boolean(p));
+
+  const chunks: string[] = [];
+  let used = 0;
+  for (const entry of ordered) {
+    if (used >= maxChars) break;
+    const block = `[стр. ${entry.page}]\n${entry.text.trim()}`;
+    if (used + block.length > maxChars && chunks.length > 0) continue;
+    chunks.push(block);
+    used += block.length + 2;
+  }
+
+  return chunks.join("\n\n").slice(0, maxChars);
+}
+
+/** Не только первые 4 стр. (часто оглавление) — равномерная выборка по документу */
+function fallbackPageSpread(pages: DocumentPage[], maxChars: number): string {
+  const body = pages.filter((p) => !looksLikeTocHeavyText(p.text, 1) || p.page > 4);
+  const pool = body.length >= 5 ? body : pages;
+  const step = Math.max(1, Math.floor(pool.length / 12));
+  const picked: DocumentPage[] = [];
+  for (let i = 0; i < pool.length && picked.length < 16; i += step) {
+    picked.push(pool[i]!);
+  }
+  if (picked.length === 0) picked.push(...pages.slice(0, 6));
+
+  const chunks: string[] = [];
+  let used = 0;
+  for (const entry of picked.sort((a, b) => a.page - b.page)) {
+    if (used >= maxChars) break;
+    const block = `[стр. ${entry.page}]\n${entry.text.trim()}`;
+    chunks.push(block);
+    used += block.length + 2;
+  }
   return chunks.join("\n\n").slice(0, maxChars);
 }
 

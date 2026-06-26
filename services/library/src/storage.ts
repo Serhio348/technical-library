@@ -16,6 +16,7 @@ import {
 import {
   buildDocumentContext,
   documentMatchesQuery,
+  extractSectionBoostTerms,
   queryTerms,
   type DocumentContextOptions,
   type DocumentPage,
@@ -801,6 +802,7 @@ export async function buildLibraryContextForQuery(
     doc_types?: DocumentType[];
     boost_terms?: string[];
     scope_path?: string;
+    prefer_wide_context?: boolean;
   } = {},
 ): Promise<LibraryContextItem[]> {
   const maxCharsPerDocument = options.maxCharsPerDocument ?? 20_000;
@@ -808,11 +810,14 @@ export async function buildLibraryContextForQuery(
   const folders = options.folders ?? [];
   const documents = options.documents ?? [];
   const docTypes = options.doc_types ?? [];
+  const scopePath = (options.scope_path ?? "").trim().replace(/\\/g, "/");
+  const sectionTerms = extractSectionBoostTerms(query);
   const contextOptions: DocumentContextOptions = {
-    boostTerms: options.boost_terms,
+    boostTerms: [...(options.boost_terms ?? []), ...sectionTerms],
+    preferWide: options.prefer_wide_context,
   };
 
-  const catalog = await listDocumentCatalog(root, slug, options.scope_path ?? "");
+  const catalog = await listDocumentCatalog(root, slug, scopePath);
   const routedPaths = resolveCatalogDocumentPaths(catalog, documents);
 
   let hits: SearchHit[];
@@ -829,17 +834,50 @@ export async function buildLibraryContextForQuery(
   filtered = filterHitsByDocTypes(filtered, docTypes, catalog);
   filtered = filterHitsByDocuments(filtered, documents);
 
+  if (scopePath) {
+    filtered = filtered.filter(
+      (h) => h.path === scopePath || h.path.startsWith(`${scopePath}/`),
+    );
+  }
+
+  let scopeFileCount = 0;
+  if (scopePath) {
+    const scopeFiles = await listIndexableFiles(root, slug, scopePath);
+    scopeFileCount = scopeFiles.length;
+    if (filtered.length === 0 && scopeFiles.length > 0) {
+      filtered = scopeFiles.map((path) => ({
+        path,
+        name: path.split("/").pop() ?? path,
+        snippet: "",
+        score: 1,
+      }));
+    }
+  }
+
+  const preferWide =
+    options.prefer_wide_context ??
+    (scopeFileCount > 0 && scopeFileCount <= 3) ||
+    filtered.length <= 2;
+  contextOptions.preferWide = preferWide;
+
+  const charsPerDoc = preferWide ? Math.max(maxCharsPerDocument, 80_000) : maxCharsPerDocument;
+  const docLimit = preferWide ? Math.min(maxDocuments, 2) : maxDocuments;
+
   const items: LibraryContextItem[] = [];
-  for (const hit of filtered.slice(0, maxDocuments)) {
+  for (const hit of filtered.slice(0, docLimit)) {
     const fullText = await readExtractedText(root, slug, hit.path, 120_000);
     if (!fullText) continue;
     const pages = await readExtractedPages(root, slug, hit.path);
-    const text = buildDocumentContext(fullText, query, maxCharsPerDocument, pages, contextOptions);
+    const meta = await readExtractedTextMeta(root, slug, hit.path);
+    let text = buildDocumentContext(fullText, query, charsPerDoc, pages, contextOptions);
+    if (meta?.index_status === "partial" && meta.index_note) {
+      text = `[Индекс неполный: ${meta.index_note}]\n\n${text}`;
+    }
     items.push({
       path: hit.path,
       name: hit.name,
       text,
-      extraction: await readExtractedTextMeta(root, slug, hit.path),
+      extraction: meta,
     });
   }
 

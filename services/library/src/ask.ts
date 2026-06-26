@@ -19,9 +19,10 @@ export type AskResult = {
 };
 
 const SYSTEM_PROMPT = `Ты помощник по нормативной и технической документации (законы, ГОСТ, ТКП, инструкции).
-Отвечай на русском языке, опираясь ТОЛЬКО на фрагменты документов ниже.
+Отвечай на русском языке, опираясь ТОЛЬКО на фрагменты документов ниже (могут быть с метками [стр. N]).
 Если в фрагментах нет ответа — скажи об этом прямо и не выдумывай нормы, номера и даты.
-В конце ответа укажи источники: названия файлов из которых взята информация.`;
+Если видишь пометку «Индекс неполный» или только оглавление без текста раздела — сообщи, что нужна переиндексация PDF (OCR) в библиотеке.
+В конце ответа укажи источники: названия файлов и номера страниц из фрагментов.`;
 
 function formatContext(items: LibraryContextItem[]): string {
   if (items.length === 0) {
@@ -70,9 +71,10 @@ export async function answerLibraryQuestion(
   if (!q) throw new Error("empty_question");
 
   const items = await buildLibraryContextForQuery(root, slug, q, {
-    maxCharsPerDocument: 18_000,
-    maxDocuments: 4,
+    maxCharsPerDocument: 100_000,
+    maxDocuments: 2,
     scope_path: scopePath,
+    prefer_wide_context: true,
   });
 
   const contextBlock = formatContext(items);

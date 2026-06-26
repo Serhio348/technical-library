@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDocumentContext, documentMatchesQuery, queryTerms } from "./documentSearch";
+import { buildDocumentContext, documentMatchesQuery, extractSectionBoostTerms, queryTerms } from "./documentSearch";
 import {
   countCyrillicChars,
   looksLikeTocHeavyText,
@@ -46,6 +46,11 @@ describe("scoreExtractionQuality", () => {
 });
 
 describe("documentSearch", () => {
+  it("extracts section numbers from query", () => {
+    const terms = extractSectionBoostTerms("Что в разделе 14 про накопительные баки?");
+    expect(terms.some((t) => t.includes("14"))).toBe(true);
+  });
+
   it("expands startup query terms", () => {
     const terms = queryTerms("Как произвести первый запуск установки?");
     expect(terms.some((t) => t.includes("пуск"))).toBe(true);
