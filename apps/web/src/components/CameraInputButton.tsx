@@ -64,7 +64,7 @@ export function CameraInputButton({
       const code = e instanceof Error ? e.message : "ocr_failed";
       const message =
         code === "ocr_no_text"
-          ? "На фото не найден текст. Снимите ближе при хорошем свете."
+          ? "Не удалось прочитать текст. Отправьте скриншот (PNG) файлом, не фото экрана."
           : code === "file_too_large"
             ? "Фото слишком большое (макс. 8 МБ)."
             : "Не удалось распознать фото.";

@@ -251,7 +251,7 @@ export function errorMessage(code: string): string {
     case "ask_failed":
       return "Не удалось получить ответ от ИИ.";
     case "ocr_no_text":
-      return "На фото не найден текст.";
+      return "Не удалось прочитать текст. Лучше скриншот (PNG), не фото экрана.";
     case "ocr_failed":
       return "Не удалось распознать фото.";
     default:
