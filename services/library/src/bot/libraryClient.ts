@@ -1,10 +1,12 @@
 import { answerLibraryQuestion, type AskResult } from "../ask.js";
 import { env } from "../config.js";
 import {
+  getTree,
   listDirections,
   readExtractedText,
   searchInstallation,
   type DirectionMeta,
+  type LibraryTree,
   type SearchHit,
 } from "../storage.js";
 import { clipSnippet } from "./format.js";
@@ -13,6 +15,10 @@ export type SearchResult = SearchHit & { excerpt: string };
 
 export async function fetchDirections(): Promise<DirectionMeta[]> {
   return listDirections(env.LIBRARY_ROOT);
+}
+
+export async function fetchTree(slug: string, path = ""): Promise<LibraryTree> {
+  return getTree(env.LIBRARY_ROOT, slug, path);
 }
 
 export async function searchLibrary(

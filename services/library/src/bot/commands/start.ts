@@ -1,59 +1,42 @@
-import type { Telegraf } from "telegraf";
-import type { Context } from "telegraf";
-import { escHtml, truncate } from "../format.js";
-import { fetchDirections } from "../libraryClient.js";
+import type { Telegraf, Context } from "telegraf";
+import { mainKeyboard } from "../keyboards.js";
+import { autoPickDirectionOnStart } from "./menu.js";
 import { getSession, sessionLabel } from "../session.js";
+import { promptChooseDirection } from "../direction.js";
 
-function helpText(): string {
+function welcomeText(): string {
   return (
-    "<b>Нормативная библиотека</b>\n\n" +
-    "Команды:\n" +
-    "/directions — список направлений\n" +
-    "/dir slug — выбрать направление (например <code>/dir electro</code>)\n" +
-    "/folder путь — папка внутри направления (например <code>/folder tkp</code>)\n" +
-    "/search текст — поиск по индексу PDF\n" +
-    "/ask вопрос — подсказка, где искать ответ (кратко)\n" +
-    "/show — полный ответ после /ask\n" +
-    "/scope — текущее направление и папка\n" +
-    "/help — эта справка\n\n" +
-    "Любой текст без команды — короткий ответ ИИ (preview), как в веб-чате."
+    "👋 <b>Нормативная библиотека</b>\n\n" +
+    "1. Нажмите <b>📚 Направление</b> и выберите из списка\n" +
+    "2. При необходимости — <b>📁 Папка</b>\n" +
+    "3. <b>🔍 Поиск</b> или <b>💬 Вопрос ИИ</b>\n\n" +
+    "Команды /dir и /search тоже работают, но проще пользоваться кнопками."
   );
-}
-
-async function replyDirections(ctx: Context): Promise<void> {
-  const directions = await fetchDirections();
-  if (directions.length === 0) {
-    await ctx.reply("Пока нет направлений. Создайте их в веб-интерфейсе.");
-    return;
-  }
-  const lines = directions.map((d) => `• <code>${escHtml(d.slug)}</code> — ${escHtml(d.title)}`);
-  await ctx.reply(truncate(`<b>Направления:</b>\n\n${lines.join("\n")}\n\nВыберите: /dir slug`), {
-    parse_mode: "HTML",
-  });
 }
 
 export function registerStart(bot: Telegraf<Context>): void {
   bot.command("start", async (ctx) => {
     const session = getSession(ctx.chat!.id);
-    await ctx.reply(
-      truncate(
-        `👋 ${helpText()}\n\nТекущий контекст: ${sessionLabel(session)}`,
-      ),
-      { parse_mode: "HTML" },
-    );
-    await replyDirections(ctx);
+    await ctx.reply(`${welcomeText()}\n\nСейчас: <b>${sessionLabel(session)}</b>`, {
+      parse_mode: "HTML",
+      ...mainKeyboard(),
+    });
+    await autoPickDirectionOnStart(ctx);
+    if (!getSession(ctx.chat!.id).slug) {
+      await promptChooseDirection(ctx);
+    }
   });
 
   bot.command("help", async (ctx) => {
-    await ctx.reply(truncate(helpText()), { parse_mode: "HTML" });
+    await ctx.reply(welcomeText(), { parse_mode: "HTML", ...mainKeyboard() });
   });
 
   bot.command("directions", async (ctx) => {
-    await replyDirections(ctx);
+    await promptChooseDirection(ctx);
   });
 
   bot.command("scope", async (ctx) => {
     const session = getSession(ctx.chat!.id);
-    await ctx.reply(`Контекст: ${sessionLabel(session)}`, { parse_mode: "HTML" });
+    await ctx.reply(`ℹ️ ${sessionLabel(session)}`, { parse_mode: "HTML", ...mainKeyboard() });
   });
 }

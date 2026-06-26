@@ -1,45 +1,49 @@
 import type { Telegraf, Context } from "telegraf";
 import { escHtml, truncate } from "../format.js";
 import { searchLibrary } from "../libraryClient.js";
-import { getSession } from "../session.js";
-import { requireSlug } from "./context.js";
+import { clearInputMode, getSession } from "../session.js";
+import { ensureDirectionOrPrompt } from "../direction.js";
+import { mainKeyboard } from "../keyboards.js";
 
-export function registerSearch(bot: Telegraf<Context>): void {
-  bot.command("search", async (ctx) => {
-    const session = getSession(ctx.chat!.id);
-    if (!requireSlug(ctx, session.slug)) return;
+export async function runSearchQuery(ctx: Context, query: string): Promise<void> {
+  const session = getSession(ctx.chat!.id);
+  if (!(await ensureDirectionOrPrompt(ctx))) return;
 
-    const query =
-      ctx.message && "text" in ctx.message ? ctx.message.text.replace(/^\/search\s*/i, "").trim() : "";
+  const q = query.trim();
+  if (!q) {
+    session.inputMode = "search";
+    await ctx.reply("🔍 Введите текст для поиска:", mainKeyboard());
+    return;
+  }
 
-    if (!query) {
-      await ctx.reply("Пример: /search требования к газопроводу");
+  clearInputMode(session);
+  await ctx.reply("🔍 Ищу…");
+
+  try {
+    const hits = await searchLibrary(session.slug, q, session.scopePath);
+    if (hits.length === 0) {
+      await ctx.reply("Ничего не найдено. Проверьте, что у файлов в веб-интерфейсе есть метка ИИ.", mainKeyboard());
       return;
     }
 
-    await ctx.reply("🔍 Ищу…");
+    const lines = hits.map(
+      (h, i) => `${i + 1}. <b>${escHtml(h.name)}</b>\n   ${escHtml(h.excerpt)}`,
+    );
 
-    try {
-      const hits = await searchLibrary(session.slug, query, session.scopePath);
-      if (hits.length === 0) {
-        await ctx.reply("Ничего не найдено. Проверьте индекс (ИИ) в веб-интерфейсе.");
-        return;
-      }
+    await ctx.reply(truncate(`<b>Найдено ${hits.length}:</b>\n\n${lines.join("\n\n")}`), {
+      parse_mode: "HTML",
+      ...mainKeyboard(),
+    });
+  } catch (e) {
+    console.error("[bot/search]", e);
+    await ctx.reply("Ошибка поиска.", mainKeyboard());
+  }
+}
 
-      const lines = hits.map(
-        (h, i) =>
-          `${i + 1}. <b>${escHtml(h.name)}</b>\n` +
-          `   <code>${escHtml(h.path)}</code>\n` +
-          `   ${escHtml(h.excerpt)}`,
-      );
-
-      await ctx.reply(
-        truncate(`<b>Найдено ${hits.length}:</b>\n\n${lines.join("\n\n")}`),
-        { parse_mode: "HTML" },
-      );
-    } catch (e) {
-      console.error("[bot/search]", e);
-      await ctx.reply("Ошибка поиска. Проверьте логи сервера.");
-    }
+export function registerSearch(bot: Telegraf<Context>): void {
+  bot.command("search", async (ctx) => {
+    const query =
+      ctx.message && "text" in ctx.message ? ctx.message.text.replace(/^\/search\s*/i, "").trim() : "";
+    await runSearchQuery(ctx, query);
   });
 }

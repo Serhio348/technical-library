@@ -3,6 +3,7 @@ import type { Context } from "telegraf";
 import { env, isTelegramBotConfigured } from "../config.js";
 import { registerAsk } from "./commands/ask.js";
 import { registerContext } from "./commands/context.js";
+import { registerMenu } from "./commands/menu.js";
 import { registerSearch } from "./commands/search.js";
 import { registerStart } from "./commands/start.js";
 
@@ -45,14 +46,9 @@ async function bootTelegram(instance: Telegraf<Context>): Promise<void> {
   console.log(`[bot] бот: @${me.username ?? "?"} (${me.first_name ?? "Telegram"})`);
 
   await instance.telegram.setMyCommands([
-    { command: "start", description: "Справка и направления" },
-    { command: "directions", description: "Список направлений" },
-    { command: "dir", description: "Выбрать направление" },
-    { command: "folder", description: "Папка внутри направления" },
+    { command: "start", description: "Главное меню" },
     { command: "search", description: "Поиск по тексту" },
-    { command: "ask", description: "Вопрос по документам (кратко)" },
-    { command: "show", description: "Полный ответ после /ask" },
-    { command: "scope", description: "Текущий контекст" },
+    { command: "ask", description: "Вопрос по документам" },
     { command: "help", description: "Справка" },
   ]);
 
@@ -94,12 +90,9 @@ export function startBot(): void {
 
   registerStart(instance);
   registerContext(instance);
+  registerMenu(instance);
   registerSearch(instance);
   registerAsk(instance);
-
-  instance.on("text", async (ctx) => {
-    await ctx.reply("Используйте /help или команды:\n/directions · /dir · /search · /ask");
-  });
 
   instance.catch((err, ctx) => {
     console.error(`[bot] ошибка (${ctx.updateType}):`, err);
