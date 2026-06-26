@@ -28,6 +28,7 @@ const webRoot = join(__dirname, "../web");
 if (existsSync(webRoot)) {
   app.use(express.static(webRoot, { index: false, maxAge: process.env.NODE_ENV === "production" ? "1h" : 0 }));
   app.get(/^(?!\/api\/|\/health).*/, (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.sendFile(join(webRoot, "index.html"));
   });
 }

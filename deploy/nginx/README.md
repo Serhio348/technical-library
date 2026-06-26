@@ -8,13 +8,24 @@
 | Technical Library | http://192.168.11.83:8080 |
 | Library (с hosts) | http://library.local |
 
-## 1. Контейнер
+## 1. Контейнер (API + UI)
+
+UI встроен в образ (`apps/web` → `npm run build` в Dockerfile). После каждого `git pull` нужен **--build**:
 
 ```bash
 cd /opt/services/technical-library
 git pull
 COMPOSE_BAKE=false docker compose up -d --build
 curl -s http://127.0.0.1:3021/health
+curl -s http://127.0.0.1:3021/ | grep -o 'assets/index-[^"]*\.js'
+```
+
+В браузере: **Ctrl+F5** (жёсткое обновление), иначе может остаться старый `index.html`.
+
+Если UI не обновился:
+
+```bash
+COMPOSE_BAKE=false docker compose build --no-cache && docker compose up -d
 ```
 
 ## 2. Nginx

@@ -80,8 +80,23 @@ curl -X POST http://127.0.0.1:3021/api/library/directions/gas/ask \
 
 ### Production (UI + API в одном контейнере)
 
+UI (`apps/web`) **собирается внутри Docker-образа** — отдельный деплой фронта не нужен, но после `git pull` обязателен **пересбор** образа:
+
 ```bash
-docker compose up -d --build
+git pull
+COMPOSE_BAKE=false docker compose up -d --build
+```
+
+Проверка, что UI обновился (имя JS-бандла меняется при каждой сборке):
+
+```bash
+curl -s http://127.0.0.1:3021/ | grep -o 'assets/index-[^"]*\.js'
+```
+
+Если кнопки «Чат» нет — пересоберите без кэша и обновите страницу с Ctrl+F5:
+
+```bash
+COMPOSE_BAKE=false docker compose build --no-cache && docker compose up -d
 ```
 
 UI: **http://127.0.0.1:3021**
@@ -103,7 +118,10 @@ UI: **http://127.0.0.1:3021**
 
 ## Docker
 
+UI и API в одном контейнере. После обновления кода:
+
 ```bash
+git pull
 COMPOSE_BAKE=false docker compose up -d --build
 ```
 
