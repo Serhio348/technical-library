@@ -8,7 +8,16 @@ import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
 import { runSearchQuery } from "./search.js";
 
-async function runAsk(ctx: Context, question: string, mode: "preview" | "full"): Promise<void> {
+export type RunAskOptions = {
+  imageBuffer?: Buffer | null;
+};
+
+export async function runAsk(
+  ctx: Context,
+  question: string,
+  mode: "preview" | "full",
+  options: RunAskOptions = {},
+): Promise<void> {
   const session = getSession(ctx.chat!.id);
   if (!(await ensureDirectionOrPrompt(ctx))) return;
 
@@ -18,28 +27,50 @@ async function runAsk(ctx: Context, question: string, mode: "preview" | "full"):
   }
 
   const q = question.trim();
-  if (!q) {
+  const hasImage = Boolean(options.imageBuffer?.length);
+  if (!q && !hasImage) {
     session.inputMode = "question";
-    await ctx.reply("💬 Введите ваш вопрос:", mainKeyboard());
+    await ctx.reply(
+      "💬 Введите вопрос, отправьте 🎤 голосовое или 📷 фото вопроса (можно с подписью).",
+      mainKeyboard(),
+    );
     return;
   }
 
   clearInputMode(session);
-  await ctx.reply(mode === "full" ? "Формирую подробный ответ…" : "Ищу раздел в документах…");
+  await ctx.reply(
+    hasImage
+      ? "📷 Распознаю фото и ищу в документах…"
+      : mode === "full"
+        ? "Формирую подробный ответ…"
+        : "Ищу раздел в документах…",
+  );
 
   try {
     const history = mode === "full" ? session.askHistory : [];
-    const result = await askLibrary(session.slug, q, session.scopePath, history, mode);
+    const result = await askLibrary(session.slug, q, session.scopePath, history, mode, options.imageBuffer);
+
+    const resolvedQuestion = result.resolved_question ?? q;
+    const userHistoryContent = result.recognized_question
+      ? q
+        ? `${q}\n\n${result.recognized_question}`
+        : result.recognized_question
+      : resolvedQuestion;
 
     if (mode === "preview") {
-      session.pendingQuestion = q;
-      session.askHistory.push({ role: "user", content: q });
+      session.pendingQuestion = resolvedQuestion;
+      session.askHistory.push({ role: "user", content: userHistoryContent });
       session.askHistory.push({ role: "assistant", content: result.answer });
     } else {
       session.pendingQuestion = null;
       session.askHistory.push({ role: "assistant", content: result.answer });
     }
     session.askHistory = session.askHistory.slice(-8);
+
+    const recognized =
+      result.recognized_question && hasImage
+        ? `<b>Распознано с фото:</b>\n${escHtml(truncate(result.recognized_question, 700))}\n\n`
+        : "";
 
     const sources =
       result.sources.length > 0
@@ -48,12 +79,20 @@ async function runAsk(ctx: Context, question: string, mode: "preview" | "full"):
 
     const suffix = mode === "preview" ? "\n\n📖 Полный ответ — кнопка «Подробный ответ»" : "";
 
-    await ctx.reply(truncate(`${escHtml(result.answer)}${sources}${suffix}`), {
+    await ctx.reply(truncate(`${recognized}${escHtml(result.answer)}${sources}${suffix}`), {
       parse_mode: "HTML",
       ...mainKeyboard(),
     });
   } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
     console.error("[bot/ask]", e);
+    if (msg === "ocr_no_text") {
+      await ctx.reply(
+        "На фото не удалось прочитать текст. Снимите чётче или добавьте подпись к фото.",
+        mainKeyboard(),
+      );
+      return;
+    }
     await ctx.reply("Не удалось получить ответ.", mainKeyboard());
   }
 }

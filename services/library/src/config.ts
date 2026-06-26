@@ -30,6 +30,12 @@ const envSchema = z.object({
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().min(8).optional(),
   ),
+  OPENAI_API_KEY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(8).optional(),
+  ),
+  /** Модель Whisper для голосовых сообщений Telegram-бота. */
+  OPENAI_WHISPER_MODEL: z.string().default("whisper-1"),
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
   TELEGRAM_BOT_TOKEN: z.preprocess(
@@ -69,4 +75,8 @@ export function isDeepSeekConfigured(): boolean {
 
 export function isTelegramBotConfigured(): boolean {
   return Boolean(env.TELEGRAM_BOT_TOKEN?.trim());
+}
+
+export function isSpeechConfigured(): boolean {
+  return Boolean(env.OPENAI_API_KEY?.trim());
 }

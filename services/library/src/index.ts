@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { existsSync } from "fs";
 import { join } from "path";
-import { env, isDeepSeekConfigured, isTelegramBotConfigured, resolvedDefaultScopePath } from "./config.js";
+import { env, isDeepSeekConfigured, isSpeechConfigured, isTelegramBotConfigured, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
 import { startBot, stopBot, isBotRunning } from "./bot/index.js";
 
@@ -20,6 +20,7 @@ app.get("/health", (_req, res) => {
     ...(defaultScope ? { default_scope_path: defaultScope } : {}),
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
     llm_configured: isDeepSeekConfigured(),
+    speech_configured: isSpeechConfigured(),
     telegram_configured: isTelegramBotConfigured(),
     telegram_running: isBotRunning(),
   });

@@ -48,6 +48,7 @@ export async function askLibrary(
   scopePath: string,
   history: unknown,
   mode: "preview" | "full",
+  imageBuffer?: Buffer | null,
 ): Promise<AskResult> {
-  return answerLibraryQuestion(env.LIBRARY_ROOT, slug, question, scopePath, history, mode);
+  return answerLibraryQuestion(env.LIBRARY_ROOT, slug, question, scopePath, history, mode, imageBuffer);
 }

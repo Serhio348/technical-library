@@ -3,6 +3,7 @@ import type { Context } from "telegraf";
 import { env, isTelegramBotConfigured } from "../config.js";
 import { registerAsk } from "./commands/ask.js";
 import { registerContext } from "./commands/context.js";
+import { registerMedia } from "./commands/media.js";
 import { registerMenu } from "./commands/menu.js";
 import { registerSearch } from "./commands/search.js";
 import { registerStart } from "./commands/start.js";
@@ -93,6 +94,7 @@ export function startBot(): void {
   registerMenu(instance);
   registerSearch(instance);
   registerAsk(instance);
+  registerMedia(instance);
 
   instance.catch((err, ctx) => {
     console.error(`[bot] ошибка (${ctx.updateType}):`, err);
