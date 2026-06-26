@@ -29,13 +29,20 @@ export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.Rea
         </div>
         <div className="tl-index-panel__meta">
           <span>{job.message}</span>
+          {job.current_file && job.status === "running" ? (
+            <span className="tl-index-panel__file">{job.current_file.split("/").pop()}</span>
+          ) : null}
           {running ? (
-            <span className="tl-index-panel__eta">
-              Осталось: {formatDuration(job.eta_seconds)} · прошло {formatDuration(job.elapsed_seconds)}
+            <span className="tl-index-panel__meta-row">
+              <span className="tl-index-panel__eta">
+                Осталось: {formatDuration(job.eta_seconds)} · прошло {formatDuration(job.elapsed_seconds)}
+              </span>
             </span>
           ) : job.status === "done" ? (
-            <span className="tl-index-panel__eta">
-              {job.updated} файлов · ошибок {job.failed} · {formatDuration(job.elapsed_seconds)}
+            <span className="tl-index-panel__meta-row">
+              <span className="tl-index-panel__eta">
+                {job.updated} файлов · ошибок {job.failed} · {formatDuration(job.elapsed_seconds)}
+              </span>
             </span>
           ) : null}
         </div>

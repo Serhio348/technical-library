@@ -122,7 +122,7 @@ export function App(): React.ReactElement {
           }
         })
         .catch(() => undefined);
-    }, 1500);
+    }, 1000);
     return () => window.clearInterval(timer);
   }, [indexJob?.job_id, indexJob?.status, activeSlug, currentPath, reloadTree, reloadCatalog]);
 

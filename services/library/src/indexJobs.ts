@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { env } from "./config.js";
 
 export type IndexJobStatus = "running" | "done" | "failed";
 
@@ -29,8 +30,8 @@ type IndexJob = IndexJobSnapshot & {
 const jobs = new Map<string, IndexJob>();
 const MAX_JOBS = 40;
 
-function jobKey(slug: string, scopePath: string): string {
-  return `${slug}::${scopePath}`;
+function typicalFileMs(): number {
+  return Math.min(env.LIBRARY_OCR_TIMEOUT_SEC * 500, 120_000);
 }
 
 function pruneJobs(): void {
@@ -42,28 +43,85 @@ function pruneJobs(): void {
   }
 }
 
-export function computePercent(processed: number, total: number, phase: IndexJobPhase): number {
+/** Доля текущего файла (0…~0.92), пока OCR ещё идёт. */
+export function inFileProgressWeight(
+  currentFile: string | null,
+  fileStartedAtMs: number | null,
+  fileEstimateMs: number,
+  nowMs = Date.now(),
+): number {
+  if (!currentFile || !fileStartedAtMs) return 0;
+  const elapsed = Math.max(0, nowMs - fileStartedAtMs);
+  if (elapsed <= 0) return 0.03;
+  const ratio = Math.min(1, elapsed / fileEstimateMs);
+  return 0.03 + ratio * 0.89;
+}
+
+export function computePercent(
+  processed: number,
+  total: number,
+  phase: IndexJobPhase,
+  currentFile: string | null = null,
+  fileStartedAtMs: number | null = null,
+  nowMs = Date.now(),
+  fileEstimateMs = typicalFileMs(),
+): number {
   if (phase === "scanning") return 0;
   if (total <= 0) return processed > 0 ? 100 : 0;
-  return Math.min(100, Math.round((processed / total) * 100));
+  const inFile = inFileProgressWeight(currentFile, fileStartedAtMs, fileEstimateMs, nowMs);
+  const raw = ((processed + inFile) / total) * 100;
+  if (currentFile && processed < total) {
+    return Math.min(99, Math.max(1, Math.round(raw)));
+  }
+  return Math.min(100, Math.round(raw));
 }
 
 export function computeEtaSeconds(
   startedAtMs: number,
   processed: number,
   total: number,
+  currentFile: string | null = null,
+  fileStartedAtMs: number | null = null,
   nowMs = Date.now(),
+  fileEstimateMs = typicalFileMs(),
 ): number | null {
-  if (total <= 0 || processed <= 0 || processed >= total) return null;
-  const elapsed = nowMs - startedAtMs;
-  if (elapsed <= 0) return null;
-  const perItem = elapsed / processed;
-  return Math.max(0, Math.round((perItem * (total - processed)) / 1000));
+  if (total <= 0) return null;
+  if (processed >= total) return 0;
+
+  const elapsed = Math.max(0, nowMs - startedAtMs);
+  const inFile = inFileProgressWeight(currentFile, fileStartedAtMs, fileEstimateMs, nowMs);
+  const effectiveDone = processed + inFile;
+
+  if (effectiveDone > 0) {
+    const perUnit = elapsed / effectiveDone;
+    return Math.max(0, Math.round((perUnit * (total - effectiveDone)) / 1000));
+  }
+
+  return Math.round((total * fileEstimateMs) / 1000);
 }
 
 function snapshot(job: IndexJob): IndexJobSnapshot {
-  const elapsed_seconds = Math.max(0, Math.round((Date.now() - job.started_at_ms) / 1000));
-  const eta_seconds = computeEtaSeconds(job.started_at_ms, job.processed, job.total);
+  const fileEstimateMs = typicalFileMs();
+  const nowMs = Date.now();
+  const elapsed_seconds = Math.max(0, Math.round((nowMs - job.started_at_ms) / 1000));
+  const percent = computePercent(
+    job.processed,
+    job.total,
+    job.phase,
+    job.current_file,
+    job.file_started_at_ms,
+    nowMs,
+    fileEstimateMs,
+  );
+  const eta_seconds = computeEtaSeconds(
+    job.started_at_ms,
+    job.processed,
+    job.total,
+    job.current_file,
+    job.file_started_at_ms,
+    nowMs,
+    fileEstimateMs,
+  );
   return {
     job_id: job.job_id,
     slug: job.slug,
@@ -74,7 +132,7 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
     processed: job.processed,
     updated: job.updated,
     failed: job.failed,
-    percent: computePercent(job.processed, job.total, job.phase),
+    percent,
     current_file: job.current_file,
     elapsed_seconds,
     eta_seconds,
@@ -84,7 +142,6 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
 
 function touchJob(job: IndexJob, patch: Partial<IndexJob>): void {
   Object.assign(job, patch);
-  job.percent = computePercent(job.processed, job.total, job.phase);
 }
 
 export function getIndexJob(jobId: string): IndexJobSnapshot | null {
@@ -144,12 +201,13 @@ export function updateIndexJobScanComplete(jobId: string, total: number): void {
 export function updateIndexJobFileStart(jobId: string, filePath: string, index: number, total: number): void {
   const job = jobs.get(jobId);
   if (!job || job.status !== "running") return;
+  const name = filePath.split("/").pop() ?? filePath;
   touchJob(job, {
     phase: "indexing",
     total,
     current_file: filePath,
     file_started_at_ms: Date.now(),
-    message: `Обработка ${index + 1} из ${total}: ${filePath.split("/").pop() ?? filePath}`,
+    message: `OCR ${index + 1}/${total}: ${name} (может занять несколько минут)`,
   });
 }
 
@@ -176,7 +234,7 @@ export function finishIndexJob(jobId: string, failed: boolean, message?: string)
     status: failed ? "failed" : "done",
     phase: "indexing",
     current_file: null,
-    percent: failed ? job.percent : 100,
+    file_started_at_ms: null,
     message:
       message ??
       (failed
@@ -197,5 +255,5 @@ export function _resetIndexJobsForTests(): void {
 }
 
 export function _getJobKey(slug: string, scopePath: string): string {
-  return jobKey(slug, scopePath);
+  return `${slug}::${scopePath}`;
 }

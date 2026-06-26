@@ -735,12 +735,24 @@ code {
 
 .tl-index-panel__meta {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.35rem 1rem;
+  flex-direction: column;
+  gap: 0.25rem;
   margin-top: 0.45rem;
   font-size: 0.82rem;
   color: var(--text-muted);
+}
+
+.tl-index-panel__file {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: hsl(var(--dir-hue, 38) 70% 72%);
+}
+
+.tl-index-panel__meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
 }
 
 .tl-index-panel__eta {
