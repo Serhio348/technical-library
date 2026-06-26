@@ -9,39 +9,15 @@ import type {
   LibraryTree,
 } from "./types";
 
-const SECRET_KEY = "tlibrary_secret";
-
-export function getLibrarySecret(): string {
-  try {
-    return sessionStorage.getItem(SECRET_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function setLibrarySecret(secret: string): void {
-  try {
-    if (secret.trim()) sessionStorage.setItem(SECRET_KEY, secret.trim());
-    else sessionStorage.removeItem(SECRET_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 type ApiOptions = {
   method?: string;
   json?: unknown;
   form?: FormData;
-  secret?: boolean;
 };
 
 async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (options.json !== undefined) headers["Content-Type"] = "application/json";
-  if (options.secret !== false && (options.method === "POST" || options.method === "PUT" || options.method === "DELETE")) {
-    const secret = getLibrarySecret();
-    if (secret) headers["x-library-secret"] = secret;
-  }
 
   const res = await fetch(path, {
     method: options.method ?? (options.json !== undefined || options.form ? "POST" : "GET"),

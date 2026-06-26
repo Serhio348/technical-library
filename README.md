@@ -61,7 +61,7 @@ curl http://127.0.0.1:3021/health
 cd apps/web && npm ci && npm run dev
 ```
 
-Для записи (создание направления, upload) укажите в UI **Доступ → x-library-secret** (значение `LIBRARY_SHARED_SECRET` из `.env`; если секрет пустой — запись без ключа).
+Пока запись (создание направления, upload) доступна без UI-авторизации — оставьте `LIBRARY_SHARED_SECRET` пустым в `.env`.
 
 ### Чат по документам (ИИ)
 

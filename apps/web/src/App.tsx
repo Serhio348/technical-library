@@ -3,7 +3,6 @@ import {
   ChevronRight,
   FolderOpen,
   FolderPlus,
-  KeyRound,
   Layers,
   MessageSquare,
   MoreHorizontal,
@@ -31,8 +30,6 @@ import {
   fileUrl,
   formatBytes,
   formatDate,
-  getLibrarySecret,
-  setLibrarySecret,
   startReindexFiles,
   startReindexFolder,
   uploadFiles,
@@ -55,8 +52,6 @@ export function App(): React.ReactElement {
   const [newFolder, setNewFolder] = useState("");
   const [uploadDocType, setUploadDocType] = useState<DocumentType | "">("");
   const [showCreate, setShowCreate] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
-  const [secretDraft, setSecretDraft] = useState(getLibrarySecret());
   const [createTitle, setCreateTitle] = useState("");
   const [maxFileMb, setMaxFileMb] = useState(200);
   const [llmConfigured, setLlmConfigured] = useState(false);
@@ -246,10 +241,6 @@ export function App(): React.ReactElement {
           </div>
         </div>
         <div className="tl-header__actions">
-          <button type="button" className="tl-btn tl-btn--ghost" onClick={() => setShowSecret(true)}>
-            <KeyRound size={16} />
-            Доступ
-          </button>
           {view === "direction" ? (
             <button type="button" className="tl-btn tl-btn--ghost" onClick={goHome}>
               <Layers size={16} />
@@ -376,38 +367,6 @@ export function App(): React.ReactElement {
         </Modal>
       ) : null}
 
-      {showSecret ? (
-        <Modal title="Ключ доступа" onClose={() => setShowSecret(false)}>
-          <p className="tl-modal__hint">
-            Для загрузки и удаления нужен <code>LIBRARY_SHARED_SECRET</code> с сервера. Хранится только в этой
-            вкладке браузера.
-          </p>
-          <label className="tl-field">
-            <span>x-library-secret</span>
-            <input
-              type="password"
-              value={secretDraft}
-              onChange={(e) => setSecretDraft(e.target.value)}
-              placeholder="секрет из .env"
-            />
-          </label>
-          <div className="tl-modal__actions">
-            <button type="button" className="tl-btn tl-btn--ghost" onClick={() => setShowSecret(false)}>
-              Отмена
-            </button>
-            <button
-              type="button"
-              className="tl-btn tl-btn--primary"
-              onClick={() => {
-                setLibrarySecret(secretDraft);
-                setShowSecret(false);
-              }}
-            >
-              Сохранить
-            </button>
-          </div>
-        </Modal>
-      ) : null}
     </div>
   );
 }
