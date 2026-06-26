@@ -30,10 +30,7 @@ export async function runAsk(
   const hasImage = Boolean(options.imageBuffer?.length);
   if (!q && !hasImage) {
     session.inputMode = "question";
-    await ctx.reply(
-      "💬 Введите вопрос, отправьте 🎤 голосовое или 📷 фото вопроса (можно с подписью).",
-      mainKeyboard(),
-    );
+    await ctx.reply("💬 Введите вопрос или 📷 фото вопроса (можно с подписью).", mainKeyboard());
     return;
   }
 

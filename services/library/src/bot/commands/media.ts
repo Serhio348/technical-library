@@ -1,9 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
-import { isSpeechConfigured } from "../../config.js";
 import { extractTextFromImageBuffer } from "../../pdfExtract.js";
 import { downloadTelegramFile } from "../telegramFiles.js";
-import { transcribeVoice } from "../speech.js";
-import { escHtml, truncate } from "../format.js";
 import { getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard } from "../keyboards.js";
@@ -69,39 +66,6 @@ export function registerMedia(bot: Telegraf<Context>): void {
     } catch (e) {
       console.error("[bot/media] document image", e);
       await ctx.reply("Не удалось загрузить изображение.", mainKeyboard());
-    }
-  });
-
-  bot.on("voice", async (ctx) => {
-    const session = getSession(ctx.chat!.id);
-    if (!(await ensureDirectionOrPrompt(ctx))) return;
-
-    if (!isSpeechConfigured()) {
-      await ctx.reply(
-        "🎤 Голосовые сообщения требуют <code>OPENAI_API_KEY</code> (Whisper) в .env на сервере.\n\n" +
-          "Или отправьте текст, фото вопроса или используйте 🎤 диктовку на клавиатуре телефона.",
-        { parse_mode: "HTML", ...mainKeyboard() },
-      );
-      return;
-    }
-
-    await ctx.reply("🎤 Распознаю речь…");
-    try {
-      const buffer = await downloadTelegramFile(ctx, ctx.message.voice.file_id);
-      const text = await transcribeVoice(buffer);
-      await ctx.reply(`<b>Распознано:</b> ${escHtml(truncate(text, 600))}`, {
-        parse_mode: "HTML",
-        ...mainKeyboard(),
-      });
-
-      if (session.inputMode === "search") {
-        await runSearchQuery(ctx, text);
-      } else {
-        await runAsk(ctx, text, "preview");
-      }
-    } catch (e) {
-      console.error("[bot/media] voice", e);
-      await ctx.reply("Не удалось распознать голосовое сообщение.", mainKeyboard());
     }
   });
 }

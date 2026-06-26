@@ -62,7 +62,7 @@ export function registerMenu(bot: Telegraf<Context>): void {
       return;
     }
     session.inputMode = "search";
-    await ctx.reply("🔍 Введите текст, 🎤 голосовое или 📷 фото для поиска:", mainKeyboard());
+    await ctx.reply("🔍 Введите текст или 📷 фото для поиска:", mainKeyboard());
   });
 
   bot.hears(BTN_ASK, async (ctx) => {
@@ -74,7 +74,7 @@ export function registerMenu(bot: Telegraf<Context>): void {
     }
     session.inputMode = "question";
     await ctx.reply(
-      "💬 Введите вопрос, 🎤 голосовое или 📷 фото вопроса (можно с подписью).\n" +
+      "💬 Введите вопрос или 📷 фото вопроса (можно с подписью).\n" +
         "Для тестов с вариантами ответа — сфотографируйте задание целиком.",
       mainKeyboard(),
     );
