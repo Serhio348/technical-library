@@ -445,8 +445,9 @@ code {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 0.65rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
   text-decoration: none;
   color: inherit;
   border: none;
@@ -455,11 +456,24 @@ code {
   text-align: left;
 }
 
+.tl-doc-row__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .tl-doc-row__name {
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.tl-doc-row__title .tl-pill {
+  flex-shrink: 0;
 }
 
 .tl-doc-row__meta {

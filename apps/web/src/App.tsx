@@ -24,7 +24,6 @@ import {
   directionHue,
   errorMessage,
   fetchActiveIndexJob,
-  fetchCatalog,
   fetchDirections,
   fetchHealth,
   fetchIndexJobStatus,
@@ -36,11 +35,10 @@ import {
   setLibrarySecret,
   startReindexFiles,
   startReindexFolder,
-  updateDocType,
   uploadFiles,
 } from "./api";
 import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
-import { DOC_TYPE_LABELS, DOC_TYPE_OPTIONS } from "./types";
+import { DOC_TYPE_OPTIONS } from "./types";
 import { ensureUniqueSlug } from "./slugify";
 
 type View = "home" | "direction";
@@ -51,7 +49,6 @@ export function App(): React.ReactElement {
   const [activeSlug, setActiveSlug] = useState<string>("");
   const [tree, setTree] = useState<LibraryTree | null>(null);
   const [currentPath, setCurrentPath] = useState("");
-  const [catalog, setCatalog] = useState<Record<string, { doc_type: DocumentType }>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,11 +80,6 @@ export function App(): React.ReactElement {
     setCurrentPath(data.path ?? path);
   }, []);
 
-  const reloadCatalog = useCallback(async (slug: string) => {
-    const map = await fetchCatalog(slug);
-    setCatalog(map);
-  }, []);
-
   useEffect(() => {
     void (async () => {
       try {
@@ -106,13 +98,12 @@ export function App(): React.ReactElement {
   useEffect(() => {
     if (view !== "direction" || !activeSlug) return;
     void reloadTree(activeSlug, currentPath).catch(() => setError("Не удалось загрузить папку."));
-    void reloadCatalog(activeSlug).catch(() => undefined);
     void fetchActiveIndexJob(activeSlug, currentPath)
       .then((job) => {
         if (job) setIndexJob(job);
       })
       .catch(() => undefined);
-  }, [view, activeSlug, currentPath, reloadTree, reloadCatalog]);
+  }, [view, activeSlug, currentPath, reloadTree]);
 
   useEffect(() => {
     if (!indexJob || indexJob.status !== "running" || !activeSlug) return;
@@ -123,13 +114,12 @@ export function App(): React.ReactElement {
           setIndexJob(job);
           if (job.status !== "running") {
             void reloadTree(activeSlug, currentPath).catch(() => undefined);
-            void reloadCatalog(activeSlug).catch(() => undefined);
           }
         })
         .catch(() => undefined);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [indexJob?.job_id, indexJob?.status, activeSlug, currentPath, reloadTree, reloadCatalog]);
+  }, [indexJob?.job_id, indexJob?.status, activeSlug, currentPath, reloadTree]);
 
   useEffect(() => {
     if (!indexJob || (indexJob.status !== "done" && indexJob.status !== "failed")) return;
@@ -191,7 +181,6 @@ export function App(): React.ReactElement {
         await trackIndexJob(await fetchIndexJobStatus(activeSlug, result.job_id));
       }
       await reloadTree(activeSlug, currentPath);
-      await reloadCatalog(activeSlug);
     } catch (e) {
       setError(errorMessage(e instanceof Error ? e.message : "error"));
     } finally {
@@ -285,7 +274,6 @@ export function App(): React.ReactElement {
             tree={tree}
             currentPath={currentPath}
             pathParts={pathParts}
-            catalog={catalog}
             newFolder={newFolder}
             uploadDocType={uploadDocType}
             busy={busy}
@@ -314,19 +302,10 @@ export function App(): React.ReactElement {
               try {
                 await deleteFile(activeSlug, path);
                 await reloadTree(activeSlug, currentPath);
-                await reloadCatalog(activeSlug);
               } catch (e) {
                 setError(errorMessage(e instanceof Error ? e.message : "error"));
               } finally {
                 setBusy(false);
-              }
-            }}
-            onDocTypeChange={async (path, docType) => {
-              try {
-                await updateDocType(activeSlug, path, docType);
-                await reloadCatalog(activeSlug);
-              } catch (e) {
-                setError(errorMessage(e instanceof Error ? e.message : "error"));
               }
             }}
             indexJob={indexJob}
@@ -494,7 +473,6 @@ function DirectionView({
   tree,
   currentPath,
   pathParts,
-  catalog,
   newFolder,
   uploadDocType,
   busy,
@@ -507,7 +485,6 @@ function DirectionView({
   onUpload,
   onDeleteFolder,
   onDeleteFile,
-  onDocTypeChange,
   indexJob,
   indexRunning,
   onReindexFolder,
@@ -520,7 +497,6 @@ function DirectionView({
   tree: LibraryTree;
   currentPath: string;
   pathParts: string[];
-  catalog: Record<string, { doc_type: DocumentType }>;
   newFolder: string;
   uploadDocType: DocumentType | "";
   busy: boolean;
@@ -533,7 +509,6 @@ function DirectionView({
   onUpload: (files: FileList | File[]) => void;
   onDeleteFolder: (path: string, name: string) => void;
   onDeleteFile: (path: string) => void;
-  onDocTypeChange: (path: string, docType: DocumentType) => void;
   indexJob: IndexJob | null;
   indexRunning: boolean;
   onReindexFolder: () => void;
@@ -715,38 +690,27 @@ function DirectionView({
                 </button>
               </article>
             ))}
-            {tree.files.map((file) => {
-              const docType = catalog[file.path]?.doc_type ?? "other";
-              return (
+            {tree.files.map((file) => (
                 <article key={file.path} className="tl-doc-row">
                   <a className="tl-doc-row__main" href={fileUrl(direction.slug, file.path)} target="_blank" rel="noreferrer">
-                    <span className="tl-doc-row__name">{file.name}</span>
+                    <span className="tl-doc-row__title">
+                      <span className="tl-doc-row__name">{file.name}</span>
+                      {file.text_index_status === "ready" ? (
+                        <span className="tl-pill tl-pill--ok">ИИ</span>
+                      ) : file.text_index_status === "partial" ? (
+                        <span className="tl-pill tl-pill--warn" title={file.text_index_note ?? ""}>
+                          ИИ~
+                        </span>
+                      ) : (
+                        <span className="tl-pill tl-pill--muted" title="Текст ещё не извлечён">
+                          —
+                        </span>
+                      )}
+                    </span>
                     <span className="tl-doc-row__meta">
                       {formatBytes(file.size)} · {formatDate(file.modified_at)}
                     </span>
                   </a>
-                  <select
-                    className="tl-select tl-select--compact"
-                    value={docType}
-                    onChange={(e) => void onDocTypeChange(file.path, e.target.value as DocumentType)}
-                  >
-                    {DOC_TYPE_OPTIONS.filter((o) => o.value).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {DOC_TYPE_LABELS[o.value as DocumentType]}
-                      </option>
-                    ))}
-                  </select>
-                  {file.text_index_status === "ready" ? (
-                    <span className="tl-pill tl-pill--ok">ИИ</span>
-                  ) : file.text_index_status === "partial" ? (
-                    <span className="tl-pill tl-pill--warn" title={file.text_index_note ?? ""}>
-                      ИИ~
-                    </span>
-                  ) : (
-                    <span className="tl-pill tl-pill--muted" title="Текст ещё не извлечён">
-                      —
-                    </span>
-                  )}
                   {file.text_index_status !== "ready" ? (
                     <button
                       type="button"
@@ -767,8 +731,7 @@ function DirectionView({
                     <Trash2 size={15} />
                   </button>
                 </article>
-              );
-            })}
+            ))}
           </div>
         )}
       </section>
