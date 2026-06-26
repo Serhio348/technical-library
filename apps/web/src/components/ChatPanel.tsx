@@ -3,6 +3,23 @@ import { useEffect, useRef, useState } from "react";
 import { askQuestion, fileUrl } from "../api";
 import type { ChatMessage, ChatSource } from "../types";
 
+const EXPAND_REQUEST_RE =
+  /^(?:да|покажи|показать|подробнее|разверни|открой|выведи)(?:\s+(?:полный|подробный))?(?:\s+ответ|\s+текст)?[.!?]*$/iu;
+
+function isExpandRequest(text: string): boolean {
+  return EXPAND_REQUEST_RE.test(text.trim());
+}
+
+function findPendingPreview(messages: ChatMessage[]): { question: string; history: ChatMessage[] } | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    if (msg?.role === "assistant" && msg.mode === "preview" && msg.pendingQuestion) {
+      return { question: msg.pendingQuestion, history: messages.slice(0, i + 1) };
+    }
+  }
+  return null;
+}
+
 export function ChatPanel({
   slug,
   scopePath,
@@ -19,6 +36,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -26,17 +44,19 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  const send = async (): Promise<void> => {
-    const text = input.trim();
-    if (!text || loading || !llmConfigured) return;
-    setInput("");
-    setError(null);
-    const userMsg: ChatMessage = { role: "user", content: text };
-    setMessages((prev) => [...prev, userMsg]);
+  const requestAnswer = async (
+    question: string,
+    mode: "preview" | "full",
+    history: ChatMessage[],
+    userLabel?: string,
+  ): Promise<void> => {
+    if (userLabel) {
+      setMessages((prev) => [...prev, { role: "user", content: userLabel }]);
+    }
     setLoading(true);
+    setLoadingMode(mode);
     try {
-      const history = messages.slice(-8);
-      const result = await askQuestion(slug, text, scopePath, history);
+      const result = await askQuestion(slug, question, scopePath, history, mode);
       setMessages((prev) => [
         ...prev,
         {
@@ -44,6 +64,8 @@ export function ChatPanel({
           content: result.answer,
           sources: result.sources,
           context_available: result.context_available,
+          mode: result.mode,
+          pendingQuestion: mode === "preview" ? question : undefined,
         },
       ]);
     } catch (e) {
@@ -57,7 +79,32 @@ export function ChatPanel({
       );
     } finally {
       setLoading(false);
+      setLoadingMode(null);
     }
+  };
+
+  const send = async (): Promise<void> => {
+    const text = input.trim();
+    if (!text || loading || !llmConfigured) return;
+    setInput("");
+    setError(null);
+
+    const pending = isExpandRequest(text) ? findPendingPreview(messages) : null;
+    if (pending) {
+      await requestAnswer(pending.question, "full", pending.history, text);
+      return;
+    }
+
+    const userMsg: ChatMessage = { role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    await requestAnswer(text, "preview", [...messages, userMsg]);
+  };
+
+  const expandAnswer = async (msg: ChatMessage, msgIndex: number): Promise<void> => {
+    if (!msg.pendingQuestion || loading) return;
+    setError(null);
+    const history = messages.slice(0, msgIndex + 1);
+    await requestAnswer(msg.pendingQuestion, "full", history, "Показать подробный ответ");
   };
 
   const scopeLabel = scopePath ? scopePath.split("/").pop() : "всё направление";
@@ -89,13 +136,23 @@ export function ChatPanel({
       <div className="tl-chat__messages">
         {messages.length === 0 ? (
           <p className="tl-chat__empty">
-            Задайте вопрос по нормативке в текущей папке. Например: «Какие требования к газопроводу?» или «Что
-            говорит ГОСТ о …?»
+            Задайте вопрос по нормативке в текущей папке. Сначала ассистент подскажет, в каком разделе искать
+            ответ, а полный текст с цитатами можно запросить кнопкой или словом «покажи».
           </p>
         ) : null}
         {messages.map((msg, idx) => (
           <div key={idx} className={`tl-chat__msg tl-chat__msg--${msg.role}`}>
             <p className="tl-chat__msg-text">{msg.content}</p>
+            {msg.role === "assistant" && msg.mode === "preview" && msg.pendingQuestion ? (
+              <button
+                type="button"
+                className="tl-chat__expand-btn"
+                disabled={loading}
+                onClick={() => void expandAnswer(msg, idx)}
+              >
+                Показать подробный ответ
+              </button>
+            ) : null}
             {msg.role === "assistant" && msg.sources && msg.sources.length > 0 ? (
               <ul className="tl-chat__sources">
                 {msg.sources.map((src: ChatSource) => (
@@ -112,7 +169,11 @@ export function ChatPanel({
             ) : null}
           </div>
         ))}
-        {loading ? <p className="tl-chat__typing">Ищу в документах и формирую ответ…</p> : null}
+        {loading ? (
+          <p className="tl-chat__typing">
+            {loadingMode === "full" ? "Формирую подробный ответ…" : "Ищу раздел в документах…"}
+          </p>
+        ) : null}
         <div ref={bottomRef} />
       </div>
 

@@ -78,12 +78,15 @@ export type ChatMessage = {
   content: string;
   sources?: ChatSource[];
   context_available?: boolean;
+  mode?: "preview" | "full";
+  pendingQuestion?: string;
 };
 
 export type AskResponse = {
   answer: string;
   sources: ChatSource[];
   context_available: boolean;
+  mode: "preview" | "full";
 };
 
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {

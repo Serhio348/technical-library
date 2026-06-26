@@ -67,6 +67,7 @@ export async function askQuestion(
   message: string,
   scopePath: string,
   history: ChatMessage[] = [],
+  mode: "preview" | "full" = "preview",
 ): Promise<AskResponse> {
   return api(`/api/library/directions/${encodeURIComponent(slug)}/ask`, {
     method: "POST",
@@ -74,6 +75,7 @@ export async function askQuestion(
       message,
       scope_path: scopePath,
       history: history.map((m) => ({ role: m.role, content: m.content })),
+      mode,
     },
   });
 }

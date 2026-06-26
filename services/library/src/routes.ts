@@ -343,12 +343,13 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const scopePath = typeof req.body?.scope_path === "string" ? req.body.scope_path.trim() : "";
     const history = req.body?.history;
+    const mode = req.body?.mode === "full" ? "full" : "preview";
     if (!isValidSlug(slug) || !message || !isValidRelativePath(scopePath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
     try {
-      const result = await answerLibraryQuestion(root, slug, message, scopePath, history);
+      const result = await answerLibraryQuestion(root, slug, message, scopePath, history, mode);
       res.json(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
