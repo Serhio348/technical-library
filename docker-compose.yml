@@ -1,6 +1,8 @@
 services:
   technical-library:
-    build: ./services/library
+    build:
+      context: .
+      dockerfile: services/library/Dockerfile
     container_name: technical-library
     restart: unless-stopped
     env_file:

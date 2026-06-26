@@ -2,6 +2,8 @@
 .env
 node_modules/
 dist/
+apps/web/node_modules/
+apps/web/dist/
 data/library/**/*
 !data/library/README.md
 *.log

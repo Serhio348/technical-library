@@ -29,23 +29,54 @@ data/library/
   ohrana-truda/
 ```
 
-Slug направления — **латиница** (`gas`, `ohrana-truda`). Название для людей — в `_meta.json` (`title`).
+Slug направления формируется **автоматически** из названия (`Газоснабжение` → `gazosnabzhenie`). Название для людей — в `_meta.json` (`title`).
 
 ## Быстрый старт
 
 ```bash
 cp .env.example .env
+npm install          # корень — скрипты dev/build
+npm run dev          # API :3021 + UI :5174
+```
+
+Откройте **http://127.0.0.1:5174** (UI проксирует API).
+
+Отдельно:
+
+```bash
+npm run dev:api      # только backend
+npm run dev:web      # только UI (нужен запущенный API)
+```
+
+### Backend (вручную)
+
+```bash
 cd services/library && npm ci && npm run dev
 curl http://127.0.0.1:3021/health
-curl http://127.0.0.1:3021/api/library/directions
 ```
+
+### Веб-интерфейс (вручную)
+
+```bash
+cd apps/web && npm ci && npm run dev
+```
+
+Для записи (создание направления, upload) укажите в UI **Доступ → x-library-secret** (значение `LIBRARY_SHARED_SECRET` из `.env`; если секрет пустой — запись без ключа).
+
+### Production (UI + API в одном контейнере)
+
+```bash
+docker compose up -d --build
+```
+
+UI: **http://127.0.0.1:3021**
 
 ## API (основное)
 
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/api/library/directions` | Список направлений |
-| POST | `/api/library/directions` | Создать направление `{ slug, title }` |
+| POST | `/api/library/directions` | Создать направление `{ title }` (имя папки формируется автоматически) |
 | GET | `/api/library/directions/:slug/tree?path=` | Дерево папок и файлов |
 | POST | `/api/library/directions/:slug/folders` | Подпапка `{ path }` |
 | POST | `/api/library/directions/:slug/upload` | Upload PDF |

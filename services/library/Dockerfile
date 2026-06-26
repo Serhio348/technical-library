@@ -1,13 +1,20 @@
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY apps/web/package.json apps/web/package-lock.json* ./
+RUN npm ci 2>/dev/null || npm install
+COPY apps/web ./
+RUN npm run build
+
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY services/library/package.json services/library/package-lock.json ./
 RUN npm ci
 
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json tsconfig.json ./
-COPY src ./src
+COPY services/library/package.json services/library/tsconfig.json ./
+COPY services/library/src ./src
 RUN npm run build
 
 FROM node:22-alpine AS runner
@@ -18,8 +25,9 @@ RUN apk add --no-cache \
     tesseract-ocr-data-rus \
     tesseract-ocr-data-eng \
     poppler-utils
-COPY package.json package-lock.json ./
+COPY services/library/package.json services/library/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY --from=web /web/dist ./web
 EXPOSE 3021
 CMD ["node", "dist/index.js"]

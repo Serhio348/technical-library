@@ -1,0 +1,171 @@
+import type {
+  Direction,
+  DirectionsResponse,
+  DocumentCatalogEntry,
+  DocumentType,
+  LibraryTree,
+} from "./types";
+
+const SECRET_KEY = "tlibrary_secret";
+
+export function getLibrarySecret(): string {
+  try {
+    return sessionStorage.getItem(SECRET_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setLibrarySecret(secret: string): void {
+  try {
+    if (secret.trim()) sessionStorage.setItem(SECRET_KEY, secret.trim());
+    else sessionStorage.removeItem(SECRET_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+type ApiOptions = {
+  method?: string;
+  json?: unknown;
+  form?: FormData;
+  secret?: boolean;
+};
+
+async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (options.json !== undefined) headers["Content-Type"] = "application/json";
+  if (options.secret !== false && (options.method === "POST" || options.method === "PUT" || options.method === "DELETE")) {
+    const secret = getLibrarySecret();
+    if (secret) headers["x-library-secret"] = secret;
+  }
+
+  const res = await fetch(path, {
+    method: options.method ?? (options.json !== undefined || options.form ? "POST" : "GET"),
+    headers,
+    body: options.form ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined),
+  });
+
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error ?? `http_${res.status}`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export async function fetchHealth(): Promise<{ status: string; max_file_mb?: number }> {
+  return api("/health");
+}
+
+export async function fetchDirections(): Promise<DirectionsResponse> {
+  return api("/api/library/directions");
+}
+
+export async function createDirection(title: string, slug?: string): Promise<Direction> {
+  const data = await api<{ direction: Direction }>("/api/library/directions", {
+    method: "POST",
+    json: slug ? { title, slug } : { title },
+  });
+  return data.direction;
+}
+
+export async function fetchTree(slug: string, path = ""): Promise<LibraryTree> {
+  const q = path ? `?path=${encodeURIComponent(path)}` : "";
+  return api(`/api/library/directions/${encodeURIComponent(slug)}/tree${q}`);
+}
+
+export async function fetchCatalog(slug: string, scopePath = ""): Promise<Record<string, DocumentCatalogEntry>> {
+  const q = scopePath ? `?path=${encodeURIComponent(scopePath)}` : "";
+  const data = await api<{ items?: DocumentCatalogEntry[] }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/catalog${q}`,
+  );
+  const map: Record<string, DocumentCatalogEntry> = {};
+  for (const item of data.items ?? []) map[item.path] = item;
+  return map;
+}
+
+export async function uploadFiles(
+  slug: string,
+  path: string,
+  files: File[],
+  docType?: DocumentType,
+): Promise<void> {
+  const form = new FormData();
+  form.set("path", path);
+  if (docType) form.set("doc_type", docType);
+  for (const file of files) form.append("files", file);
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/upload`, { form });
+}
+
+export async function createFolder(slug: string, path: string): Promise<void> {
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/folders`, {
+    method: "POST",
+    json: { path },
+  });
+}
+
+export async function deleteFolder(slug: string, path: string): Promise<void> {
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/folders?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteFile(slug: string, path: string): Promise<void> {
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateDocType(slug: string, path: string, docType: DocumentType): Promise<void> {
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/catalog`, {
+    method: "PUT",
+    json: { path, doc_type: docType },
+  });
+}
+
+export function fileUrl(slug: string, path: string): string {
+  return `/api/library/directions/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`;
+}
+
+export function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function formatDate(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "—";
+  const d = new Date(ms);
+  return d.toLocaleDateString("ru-RU");
+}
+
+export function directionHue(slug: string): number {
+  const palette = [32, 168, 210, 278, 12, 145, 95];
+  let sum = 0;
+  for (let i = 0; i < slug.length; i += 1) sum += slug.charCodeAt(i);
+  return palette[sum % palette.length] ?? 32;
+}
+
+export function errorMessage(code: string): string {
+  switch (code) {
+    case "library_unavailable":
+      return "Сервис библиотеки недоступен. Запустите backend на порту 3021.";
+    case "unauthorized":
+      return "Нужен ключ доступа (Настройки → секрет библиотеки).";
+    case "invalid_slug":
+      return "Не удалось сформировать имя папки. Уточните название направления.";
+    case "title_required":
+      return "Укажите название направления.";
+    case "invalid_file_type":
+      return "Формат не поддерживается (PDF, DOC, JPEG, PNG, MD, TXT).";
+    case "file_too_large":
+      return "Файл слишком большой.";
+    case "folder_not_empty":
+      return "Папка не пустая — сначала удалите содержимое.";
+    default:
+      return "Произошла ошибка. Попробуйте ещё раз.";
+  }
+}

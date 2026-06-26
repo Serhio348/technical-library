@@ -1,0 +1,16 @@
+{
+  "name": "technical-library",
+  "private": true,
+  "description": "Technical Library — monorepo (API + web UI)",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --prefix services/library\" \"npm run dev --prefix apps/web\"",
+    "dev:api": "npm run dev --prefix services/library",
+    "dev:web": "npm run dev --prefix apps/web",
+    "build": "npm run build --prefix services/library && npm run build --prefix apps/web",
+    "test": "npm test --prefix services/library"
+  },
+  "postinstall": "npm install --prefix services/library && npm install --prefix apps/web",
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

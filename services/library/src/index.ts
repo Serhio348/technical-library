@@ -1,5 +1,7 @@
 import express from "express";
 import multer from "multer";
+import { existsSync } from "fs";
+import { join } from "path";
 import { env, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
 
@@ -20,6 +22,14 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/library", createLibraryRouter());
+
+const webRoot = join(__dirname, "../web");
+if (existsSync(webRoot)) {
+  app.use(express.static(webRoot, { index: false, maxAge: process.env.NODE_ENV === "production" ? "1h" : 0 }));
+  app.get(/^(?!\/api\/|\/health).*/, (_req, res) => {
+    res.sendFile(join(webRoot, "index.html"));
+  });
+}
 
 app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {

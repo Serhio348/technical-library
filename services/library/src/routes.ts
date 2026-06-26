@@ -5,6 +5,7 @@ import { stat } from "fs/promises";
 import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
+import { ensureUniqueSlug } from "./slugify.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
@@ -70,13 +71,26 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
   });
 
   router.post(basePath, requireLibrarySecret, async (req, res) => {
-    const slug = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
-    const title = typeof req.body?.title === "string" ? req.body.title.trim() : slug;
-    if (!isValidSlug(slug)) {
-      res.status(400).json({ error: "invalid_slug" });
+    const titleRaw = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const slugRaw = typeof req.body?.slug === "string" ? req.body.slug.trim() : "";
+    if (!titleRaw && !slugRaw) {
+      res.status(400).json({ error: "title_required" });
       return;
     }
     try {
+      let slug = slugRaw;
+      const title = titleRaw || slugRaw;
+      if (!slug) {
+        const existing = await listDirections(root);
+        slug = ensureUniqueSlug(
+          title,
+          existing.map((d) => d.slug),
+        );
+      }
+      if (!isValidSlug(slug)) {
+        res.status(400).json({ error: "invalid_slug" });
+        return;
+      }
       const direction = await createDirection(root, slug, title);
       res.status(201).json({ direction, item: direction });
     } catch {

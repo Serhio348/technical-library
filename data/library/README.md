@@ -26,7 +26,7 @@ data/library/
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -H "x-library-secret: SECRET" \
-  -d '{"slug":"gas","title":"Газоснабжение"}' \
+  -d '{"title":"Газоснабжение"}' \
   http://127.0.0.1:3021/api/library/directions
 ```
 
@@ -36,5 +36,5 @@ curl -X POST -H "Content-Type: application/json" \
 curl -X POST -H "Content-Type: application/json" \
   -H "x-library-secret: SECRET" \
   -d '{"path":"tkp"}' \
-  http://127.0.0.1:3021/api/library/directions/gas/folders
+  http://127.0.0.1:3021/api/library/directions/gazosnabzhenie/folders
 ```
