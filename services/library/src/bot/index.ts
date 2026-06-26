@@ -57,11 +57,12 @@ async function bootTelegram(instance: Telegraf<Context>): Promise<void> {
   ]);
 
   console.log("[bot] запуск long polling…");
-  await withTimeout(
-    instance.launch({ dropPendingUpdates: true }),
-    CONNECT_TIMEOUT_MS,
-    "launch",
-  );
+  void instance.launch({ dropPendingUpdates: true }).catch((err: unknown) => {
+    botRunning = false;
+    bot = null;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[bot] polling остановлен: ${msg}`);
+  });
 
   bot = instance;
   botRunning = true;
