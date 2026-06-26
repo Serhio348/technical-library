@@ -860,8 +860,7 @@ export async function buildLibraryContextForQuery(
 
   const preferWide =
     options.prefer_wide_context ??
-    (scopeFileCount > 0 && scopeFileCount <= 3) ||
-    filtered.length <= 2;
+    ((scopeFileCount > 0 && scopeFileCount <= 3) || filtered.length <= 2);
   contextOptions.preferWide = preferWide;
 
   const charsPerDoc = preferWide ? Math.max(maxCharsPerDocument, 80_000) : maxCharsPerDocument;
