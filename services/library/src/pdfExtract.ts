@@ -44,11 +44,30 @@ export function countCyrillicChars(text: string): number {
 }
 
 export function looksLikeTocHeavyText(text: string, pageCount: number): boolean {
-  if (pageCount < 3 || text.length < MIN_TEXT_CHARS) return false;
+  if (text.length < MIN_TEXT_CHARS) return false;
+
   const entries = text.match(TOC_ENTRY_RE) ?? [];
-  if (entries.length < 4) return false;
-  const entryChars = entries.reduce((sum, entry) => sum + entry.length, 0);
-  return entryChars / text.length >= 0.45;
+  if (entries.length >= 4) {
+    const entryChars = entries.reduce((sum, entry) => sum + entry.length, 0);
+    if (entryChars / text.length >= 0.45) return true;
+  }
+
+  // ТКП/ГОСТ: много строк «14. ЭКСПЛУАТАЦИЯ БАКОВ...» без абзацев тела раздела
+  const sectionHeadings =
+    text.match(/^\s*\d+(?:\.\d+)*\.?\s+[А-ЯЁA-Z][^\n]{6,120}$/gm) ?? [];
+  if (sectionHeadings.length >= 5) {
+    const headingChars = sectionHeadings.reduce((sum, line) => sum + line.length, 0);
+    const bodyParagraphs = text
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 55 && !/^\d+(?:\.\d+)*\.?\s+[А-ЯЁA-Z]/.test(line));
+    if (headingChars / text.length >= 0.2 && bodyParagraphs.length < sectionHeadings.length / 3) {
+      return true;
+    }
+  }
+
+  if (pageCount >= 3 && text.length / pageCount < MIN_CHARS_PER_PAGE) return true;
+  return false;
 }
 
 export function needsOcrFallback(text: string | null, pageCount = 0): boolean {
@@ -179,8 +198,25 @@ export async function extractPdfText(filePath: string): Promise<string | null> {
   return result.text;
 }
 
-export async function extractPdfWithFallback(filePath: string): Promise<PdfExtractionResult> {
+export async function extractPdfWithFallback(
+  filePath: string,
+  options?: { forceOcr?: boolean },
+): Promise<PdfExtractionResult> {
   const { text: parsed, pageCount } = await extractPdfTextLayer(filePath);
+
+  if (options?.forceOcr) {
+    const ocr = await extractPdfTextWithOcrDetailed(filePath);
+    if (ocr.text) {
+      return {
+        text: ocr.text,
+        extractor: "tesseract-ocr",
+        confidence: 0.65,
+        pages: ocr.pages,
+        source_pages: pageCount,
+      };
+    }
+  }
+
   const mustCompareOcr =
     needsOcrFallback(parsed, pageCount) || pageCount >= MIN_PAGES_FOR_OCR_COMPARE;
 
@@ -209,6 +245,7 @@ export async function extractPdfWithFallback(filePath: string): Promise<PdfExtra
   const ocrScore = scoreExtractionQuality(ocr.text, pageCount);
   const preferOcr =
     needsOcrFallback(parsed, pageCount) ||
+    looksLikeTocHeavyText(parsed ?? "", pageCount) ||
     ocrScore > parsedScore * 1.03 ||
     (ocr.pages.length > 0 && parsedScore <= 0);
 

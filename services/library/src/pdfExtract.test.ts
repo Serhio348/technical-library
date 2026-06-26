@@ -37,6 +37,19 @@ describe("pdf OCR quality gate", () => {
     expect(needsOcrFallback(toc, 30)).toBe(true);
   });
 
+  it("detects TKP-style section heading list without page numbers", () => {
+    const tkpToc = [
+      "1. ОБЛАСТЬ ПРИМЕНЕНИЯ",
+      "2. НОРМАТИВНЫЕ ССЫЛКИ",
+      "3. ТЕРМИНЫ И ОПРЕДЕЛЕНИЯ",
+      "4. ОБЩИЕ ПОЛОЖЕНИЯ",
+      "5. ТРЕБОВАНИЯ К ПРОЕКТИРОВАНИЮ",
+      "14. ЭКСПЛУАТАЦИЯ БАКОВ-АККУМУЛЯТОРОВ ГОРЯЧЕЙ ВОДЫ",
+      "15. ТРЕБОВАНИЯ БЕЗОПАСНОСТИ",
+    ].join("\n");
+    expect(looksLikeTocHeavyText(tkpToc, 40)).toBe(true);
+  });
+
   it("scores body text higher than toc-only layer", () => {
     const toc = "8. ПОРЯДОК МОНТАЖА 8 10. ИЗВЛЕЧЕНИЕ 10";
     const body = "Первый запуск. Проверьте давление. Запустите насос. ".repeat(30);

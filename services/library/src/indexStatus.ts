@@ -66,7 +66,20 @@ export function assessPdfIndexStatus(
       source_pages: sourcePages,
       indexed_pages: 0,
       index_status: "partial",
-      index_note: "Текстовый слой PDF (часто только оглавление). Нужен полный OCR — переиндексируйте с большим лимитом страниц.",
+      index_note: "Текстовый слой PDF (часто только оглавление). Нужен полный OCR — переиндексируйте (↻).",
+    };
+  }
+
+  if (
+    result.extractor === "pdf-parse" &&
+    sourcePages >= MIN_PAGES_FOR_OCR_COMPARE &&
+    looksLikeTocHeavyText(result.text ?? "", sourcePages)
+  ) {
+    return {
+      source_pages: sourcePages,
+      indexed_pages: 0,
+      index_status: "partial",
+      index_note: "В индексе похоже только оглавление. Переиндексируйте файл (↻) для полного OCR.",
     };
   }
 

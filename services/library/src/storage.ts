@@ -293,7 +293,11 @@ function contentTypeFor(name: string): string {
   return "application/octet-stream";
 }
 
-async function extractTextFromFile(absFile: string, rel: string): Promise<TextExtractionOutcome> {
+async function extractTextFromFile(
+  absFile: string,
+  rel: string,
+  options?: { forceOcr?: boolean },
+): Promise<TextExtractionOutcome> {
   const lower = absFile.toLowerCase();
   let extracted: string | null = null;
   let extractor: ExtractedTextMeta["extractor"] | null = null;
@@ -302,7 +306,7 @@ async function extractTextFromFile(absFile: string, rel: string): Promise<TextEx
   let pdfResult: Awaited<ReturnType<typeof extractPdfWithFallback>> | null = null;
 
   if (lower.endsWith(".pdf")) {
-    pdfResult = await extractPdfWithFallback(absFile);
+    pdfResult = await extractPdfWithFallback(absFile, { forceOcr: options?.forceOcr });
     extracted = pdfResult.text;
     extractor = pdfResult.extractor;
     confidence = pdfResult.confidence;
@@ -944,7 +948,7 @@ export async function reindexSingleFile(
 ): Promise<ReindexResultItem> {
   const abs = resolveFilePath(root, slug, rel);
   try {
-    const outcome = await extractTextFromFile(abs, rel);
+    const outcome = await extractTextFromFile(abs, rel, { forceOcr: true });
     await removeExtractedSidecar(root, slug, rel);
     await writeExtractedSidecar(root, slug, rel, outcome);
     await ensureCatalogSidecar(root, slug, rel);
