@@ -7,7 +7,9 @@
     "dev:api": "npm run dev --prefix services/library",
     "dev:web": "npm run dev --prefix apps/web",
     "build": "npm run build --prefix services/library && npm run build --prefix apps/web",
+    "build:web": "npm run build --prefix apps/web",
     "deploy": "bash scripts/deploy-vps.sh",
+    "deploy:web": "bash scripts/build-web.sh",
     "test": "npm test --prefix services/library"
   },
   "postinstall": "npm install --prefix services/library && npm install --prefix apps/web",

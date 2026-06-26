@@ -8,9 +8,33 @@
 | Technical Library | http://192.168.11.83:8080 |
 | Library (с hosts) | http://library.local |
 
-## 1. Контейнер (API + UI)
+## Архитектура
 
-UI встроен в образ (`apps/web` → `npm run build` в Dockerfile). **Отдельно фронт на VPS не ставится** — только пересборка образа:
+```
+Браузер :8080
+    → nginx отдаёт apps/web/dist   (ФРОНТ — обновлять отдельно!)
+    → /api/* прокси на :3021       (БЭК — docker)
+```
+
+## Обновить только фронт (иконка «Чат», UI)
+
+```bash
+cd /opt/services/technical-library
+git pull
+chmod +x scripts/build-web.sh
+./scripts/build-web.sh
+sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Проверка:
+
+```bash
+JS=$(curl -s http://127.0.0.1:8080/ | sed -n 's|.*src="/assets/\(index-[^"]*\.js\)".*|\1|p')
+curl -s "http://127.0.0.1:8080/assets/$JS" | grep -o 'Чат'
+```
+
+## Полный деплой (фронт + API + nginx)
 
 ```bash
 cd /opt/services/technical-library
@@ -18,61 +42,35 @@ chmod +x scripts/deploy-vps.sh
 ./scripts/deploy-vps.sh
 ```
 
-Или вручную:
+## Только API (без UI)
 
 ```bash
 git pull
-COMPOSE_BAKE=false WEB_CACHEBUST=$(date +%s) docker compose build --no-cache
-docker compose up -d
+COMPOSE_BAKE=false docker compose up -d --build
+curl -s http://127.0.0.1:3021/health
 ```
 
-Проверка UI (должен найти «Чат»):
-
-```bash
-JS=$(curl -s http://127.0.0.1:3021/ | sed -n 's|.*src="/assets/\(index-[^"]*\.js\)".*|\1|p')
-curl -s "http://127.0.0.1:3021/assets/$JS" | grep -o 'Чат'
-```
-
-В браузере: **http://192.168.11.83:8080** (не :80 — там osmos!) → **Ctrl+F5**.
-
-## 2. Nginx
+## Первичная установка nginx
 
 ```bash
 cd /opt/services/technical-library
+./scripts/build-web.sh
 sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
 sudo ln -sf /etc/nginx/sites-available/technical-library /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 3. Firewall (если ufw включён)
+## Firewall (если ufw включён)
 
 ```bash
 sudo ufw allow 8080/tcp
 sudo ufw status
 ```
 
-## 4. Проверка с ПК в сети
+## library.local на порту 80
 
-```text
-http://192.168.11.83:8080
-```
-
-## 5. Опционально: library.local на порту 80
-
-На Windows (`C:\Windows\System32\drivers\etc\hosts`, от администратора):
-
-```text
-192.168.11.83  library.local
-```
-
-На Linux/macOS: `/etc/hosts` — та же строка.
-
-После этого: **http://library.local**
-
-## Замена IP
-
-Если IP VPS другой — отредактируйте `server_name` в первом блоке `technical-library.conf`.
+В `hosts` на ПК: `192.168.11.83  library.local` → **http://library.local**
 
 ## SSL (позже)
 

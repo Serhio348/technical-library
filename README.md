@@ -78,28 +78,42 @@ curl -X POST http://127.0.0.1:3021/api/library/directions/gas/ask \
   -d '{"message":"Какие требования к газопроводу?","scope_path":"tkp"}'
 ```
 
-### Production (UI + API в одном контейнере)
+### Production на VPS (фронт и бэкенд **раздельно**)
 
-UI (`apps/web`) **собирается внутри Docker-образа** — отдельный деплой фронта не нужен, но после `git pull` обязателен **пересбор** образа:
+| Часть | Где | Как обновить |
+|-------|-----|--------------|
+| **Фронт (UI, иконка «Чат»)** | `apps/web/dist` → nginx `:8080` | `./scripts/build-web.sh` |
+| **Бэкенд (API, OCR, чат)** | Docker `:3021` | `docker compose up -d --build` |
+
+Полный деплой:
+
+```bash
+cd /opt/services/technical-library
+git pull
+chmod +x scripts/*.sh
+./scripts/deploy-vps.sh
+```
+
+**Только фронт** (новая кнопка, стили — без пересборки API):
 
 ```bash
 git pull
-COMPOSE_BAKE=false docker compose up -d --build
+./scripts/build-web.sh
+sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Проверка, что UI обновился (имя JS-бандла меняется при каждой сборке):
+Проверка UI (через nginx, как в браузере):
 
 ```bash
-curl -s http://127.0.0.1:3021/ | grep -o 'assets/index-[^"]*\.js'
+curl -s http://127.0.0.1:8080/ | grep assets
+JS=$(curl -s http://127.0.0.1:8080/ | sed -n 's|.*src="/assets/\(index-[^"]*\.js\)".*|\1|p')
+curl -s "http://127.0.0.1:8080/assets/$JS" | grep -o 'Чат'
 ```
 
-Если кнопки «Чат» нет — пересоберите без кэша и обновите страницу с Ctrl+F5:
+Браузер: **http://192.168.11.83:8080** → Ctrl+F5.
 
-```bash
-COMPOSE_BAKE=false docker compose build --no-cache && docker compose up -d
-```
-
-UI: **http://127.0.0.1:3021**
+Локально без nginx: `npm run build:web` + Docker — UI на **http://127.0.0.1:3021**.
 
 ## API (основное)
 
@@ -116,16 +130,14 @@ UI: **http://127.0.0.1:3021**
 
 > `/api/library/installations/*` — устаревший alias тех же маршрутов.
 
-## Docker
+## Docker (только API)
 
-UI и API в одном контейнере. После обновления кода:
+Контейнер — **бэкенд** на **127.0.0.1:3021**. UI на VPS отдаёт **nginx** из `apps/web/dist`.
 
 ```bash
 git pull
 COMPOSE_BAKE=false docker compose up -d --build
 ```
-
-Контейнер слушает **127.0.0.1:3021** (только localhost). Снаружи — через nginx.
 
 ## Nginx (VPS, рядом с osmos)
 
