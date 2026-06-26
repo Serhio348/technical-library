@@ -25,7 +25,8 @@ RUN apk add --no-cache \
     tesseract-ocr \
     tesseract-ocr-data-rus \
     tesseract-ocr-data-eng \
-    poppler-utils
+    poppler-utils \
+    imagemagick
 COPY services/library/package.json services/library/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist

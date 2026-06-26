@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
@@ -141,27 +141,13 @@ async function renderPdfPages(
 async function ocrImage(imagePath: string, timeoutMs: number, psm = "3"): Promise<string> {
   const { stdout } = await execFileAsync(
     "tesseract",
-    [imagePath, "stdout", "-l", "rus+eng", "--psm", psm],
+    [imagePath, "stdout", "-l", "rus+eng", "--oem", "1", "--psm", psm],
     { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, encoding: "utf8" },
   );
   return typeof stdout === "string" ? stdout : "";
 }
 
-export async function extractTextFromImageBuffer(
-  buffer: Buffer,
-  options?: { timeoutMs?: number },
-): Promise<string | null> {
-  const timeoutMs = options?.timeoutMs ?? 60_000;
-  const tmpRoot = await mkdtemp(join(tmpdir(), "doc-library-img-ocr-"));
-  const imagePath = join(tmpRoot, "photo.jpg");
-  try {
-    await writeFile(imagePath, buffer);
-    const raw = await ocrImage(imagePath, timeoutMs, "6");
-    return normalizeExtractedText(raw);
-  } finally {
-    await rm(tmpRoot, { recursive: true, force: true }).catch(() => undefined);
-  }
-}
+export { extractTextFromImageBuffer, isPhotoOcrUsable } from "./imageOcr.js";
 
 export type OcrExtraction = {
   text: string | null;

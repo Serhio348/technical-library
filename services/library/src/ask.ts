@@ -1,7 +1,7 @@
 import { buildLibraryContextForQuery, type LibraryContextItem } from "./storage.js";
 import { chatCompletion, type ChatMessage } from "./deepseek.js";
 import { isDeepSeekConfigured } from "./config.js";
-import { extractTextFromImageBuffer } from "./pdfExtract.js";
+import { extractTextFromImageBuffer, isPhotoOcrUsable } from "./imageOcr.js";
 
 export type AskHistoryItem = {
   role: "user" | "assistant";
@@ -143,7 +143,7 @@ export async function answerLibraryQuestion(
   let recognizedFromImage: string | null = null;
   if (imageBuffer?.length) {
     recognizedFromImage = await extractTextFromImageBuffer(imageBuffer);
-    if (!recognizedFromImage && !question.trim()) {
+    if (!isPhotoOcrUsable(recognizedFromImage) && !question.trim()) {
       throw new Error("ocr_no_text");
     }
   }

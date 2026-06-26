@@ -1,5 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
 import { extractTextFromImageBuffer } from "../../pdfExtract.js";
+import { isPhotoOcrUsable } from "../../imageOcr.js";
 import { downloadTelegramFile } from "../telegramFiles.js";
 import { getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
@@ -21,14 +22,14 @@ async function handleImageBuffer(
     await ctx.reply("📷 Распознаю текст на фото…");
     try {
       const recognized = await extractTextFromImageBuffer(buffer);
-      if (!recognized) {
+      if (!isPhotoOcrUsable(recognized)) {
         await ctx.reply(
           "На фото не найден текст. Снимите ближе при хорошем свете или добавьте подпись к фото.",
           mainKeyboard(),
         );
         return;
       }
-      const query = caption ? `${caption}\n\n${recognized}` : recognized;
+      const query = caption ? `${caption}\n\n${recognized!}` : recognized!;
       await runSearchQuery(ctx, query);
     } catch (e) {
       console.error("[bot/media] search ocr", e);

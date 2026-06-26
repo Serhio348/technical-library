@@ -10,6 +10,7 @@ import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
 import { extractTextFromImageBuffer } from "./pdfExtract.js";
+import { isPhotoOcrUsable } from "./imageOcr.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
@@ -518,7 +519,7 @@ export function createLibraryRouter(): Router {
     }
     try {
       const text = await extractTextFromImageBuffer(file.buffer);
-      if (!text) {
+      if (!isPhotoOcrUsable(text)) {
         res.status(422).json({ error: "ocr_no_text" });
         return;
       }
