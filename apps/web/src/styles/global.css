@@ -505,6 +505,45 @@ code {
   border-color: rgba(248, 113, 113, 0.35);
 }
 
+.tl-speech-input {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tl-speech-input__btn--active {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+  animation: tl-speech-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tl-speech-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0);
+  }
+}
+
+.tl-speech-input__error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  z-index: 5;
+  width: max-content;
+  max-width: 220px;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(30, 20, 20, 0.96);
+  color: #fecaca;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
 .tl-pill {
   font-size: 0.68rem;
   font-weight: 700;

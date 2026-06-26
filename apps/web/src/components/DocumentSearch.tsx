@@ -1,7 +1,8 @@
 import { Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchSearch, fileUrl } from "../api";
 import type { SearchHit } from "../types";
+import { SpeechInputButton } from "./SpeechInputButton";
 
 function highlightSnippet(snippet: string, query: string): React.ReactNode {
   const q = query.trim();
@@ -35,6 +36,14 @@ export function DocumentSearch({
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const voiceBaseRef = useRef("");
+
+  const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
+    const base = voiceBaseRef.current.trim();
+    const next = base ? `${base} ${text}` : text;
+    setQuery(next);
+    if (isFinal) voiceBaseRef.current = next;
+  };
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 350);
@@ -87,8 +96,23 @@ export function DocumentSearch({
           placeholder={`Поиск по тексту ${scopeHint}…`}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <SpeechInputButton
+          title="Нажмите и говорите — текст появится в строке"
+          onListeningStart={() => {
+            voiceBaseRef.current = query;
+          }}
+          onTranscript={applyVoiceTranscript}
+        />
         {query ? (
-          <button type="button" className="tl-icon-btn" title="Очистить" onClick={() => setQuery("")}>
+          <button
+            type="button"
+            className="tl-icon-btn"
+            title="Очистить"
+            onClick={() => {
+              voiceBaseRef.current = "";
+              setQuery("");
+            }}
+          >
             <X size={15} />
           </button>
         ) : null}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { askQuestion, fileUrl } from "../api";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "../chatStorage";
 import type { ChatMessage, ChatSource } from "../types";
+import { SpeechInputButton } from "./SpeechInputButton";
 
 const EXPAND_REQUEST_RE =
   /^(?:да|покажи|показать|подробнее|разверни|открой|выведи)(?:\s+(?:полный|подробный))?(?:\s+ответ|\s+текст)?[.!?]*$/iu;
@@ -40,6 +41,14 @@ export function ChatPanel({
   const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const voiceBaseRef = useRef("");
+
+  const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
+    const base = voiceBaseRef.current.trim();
+    const next = base ? `${base} ${text}` : text;
+    setInput(next);
+    if (isFinal) voiceBaseRef.current = next;
+  };
 
   useEffect(() => {
     saveChatHistory(slug, scopePath, messages);
@@ -92,6 +101,7 @@ export function ChatPanel({
     const text = input.trim();
     if (!text || loading || !llmConfigured) return;
     setInput("");
+    voiceBaseRef.current = "";
     setError(null);
 
     const pending = isExpandRequest(text) ? findPendingPreview(messages) : null;
@@ -211,13 +221,24 @@ export function ChatPanel({
           value={input}
           disabled={!llmConfigured || loading}
           placeholder="Ваш вопрос…"
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            voiceBaseRef.current = e.target.value;
+            setInput(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void send();
             }
           }}
+        />
+        <SpeechInputButton
+          title="Нажмите и говорите — текст появится в поле"
+          disabled={!llmConfigured || loading}
+          onListeningStart={() => {
+            voiceBaseRef.current = input;
+          }}
+          onTranscript={applyVoiceTranscript}
         />
         <button type="submit" className="tl-btn tl-btn--primary" disabled={!llmConfigured || loading || !input.trim()}>
           <Send size={16} />
