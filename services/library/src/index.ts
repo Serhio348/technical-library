@@ -4,7 +4,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { env, isDeepSeekConfigured, isTelegramBotConfigured, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
-import { startBot, stopBot } from "./bot/index.js";
+import { startBot, stopBot, isBotRunning } from "./bot/index.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -21,7 +21,7 @@ app.get("/health", (_req, res) => {
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
     llm_configured: isDeepSeekConfigured(),
     telegram_configured: isTelegramBotConfigured(),
-    telegram_running: isTelegramBotConfigured() && !env.TELEGRAM_BOT_DISABLED,
+    telegram_running: isBotRunning(),
   });
 });
 

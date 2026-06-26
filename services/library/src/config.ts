@@ -33,8 +33,11 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
   TELEGRAM_BOT_TOKEN: z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-    z.string().min(20).optional(),
+    (value) => (typeof value === "string" ? value.trim() : value),
+    z.preprocess(
+      (value) => (typeof value === "string" && value === "" ? undefined : value),
+      z.string().min(20).optional(),
+    ),
   ),
   TELEGRAM_BOT_DISABLED: z.preprocess(
     (value) => value === "true" || value === "1",
