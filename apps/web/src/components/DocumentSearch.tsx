@@ -2,6 +2,7 @@ import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchSearch, fileUrl } from "../api";
 import type { SearchHit } from "../types";
+import { CameraInputButton } from "./CameraInputButton";
 import { SpeechInputButton } from "./SpeechInputButton";
 
 function highlightSnippet(snippet: string, query: string): React.ReactNode {
@@ -36,8 +37,15 @@ export function DocumentSearch({
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [speechHint, setSpeechHint] = useState<string | null>(null);
+  const [inputHint, setInputHint] = useState<string | null>(null);
   const voiceBaseRef = useRef("");
+
+  const applyRecognizedText = (text: string): void => {
+    const base = voiceBaseRef.current.trim();
+    const next = base ? `${base} ${text}` : text;
+    setQuery(next);
+    voiceBaseRef.current = next;
+  };
 
   const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
     const base = voiceBaseRef.current.trim();
@@ -99,11 +107,19 @@ export function DocumentSearch({
         />
         <SpeechInputButton
           title="Нажмите и говорите — текст появится в строке"
-          onErrorChange={setSpeechHint}
+          onErrorChange={setInputHint}
           onListeningStart={() => {
             voiceBaseRef.current = query;
           }}
           onTranscript={applyVoiceTranscript}
+        />
+        <CameraInputButton
+          title="Сфотографировать вопрос"
+          onHintChange={setInputHint}
+          onBeforeCapture={() => {
+            voiceBaseRef.current = query;
+          }}
+          onText={applyRecognizedText}
         />
         {query ? (
           <button
@@ -120,7 +136,7 @@ export function DocumentSearch({
         ) : null}
       </div>
 
-      {speechHint ? <p className="tl-speech-hint">{speechHint}</p> : null}
+      {inputHint ? <p className="tl-speech-hint">{inputHint}</p> : null}
 
       {debounced ? (
         <div className="tl-search__results">

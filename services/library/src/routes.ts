@@ -9,6 +9,7 @@ import { ensureUniqueSlug } from "./slugify.js";
 import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
+import { extractTextFromImageBuffer } from "./pdfExtract.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
@@ -39,6 +40,11 @@ function routeSlug(raw: string | string[] | undefined): string {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: env.LIBRARY_MAX_FILE_MB * 1024 * 1024, files: 10 },
+});
+
+const photoOcrUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
 });
 
 function parseCsvQuery(value: unknown): string[] {
@@ -463,6 +469,30 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
 export function createLibraryRouter(): Router {
   const router = Router();
   const root = env.LIBRARY_ROOT;
+
+  router.post("/ocr", photoOcrUpload.single("image"), async (req, res) => {
+    const file = req.file;
+    if (!file?.buffer?.length) {
+      res.status(400).json({ error: "no_image" });
+      return;
+    }
+    const mime = file.mimetype?.toLowerCase() ?? "";
+    if (!mime.startsWith("image/")) {
+      res.status(400).json({ error: "invalid_image_type" });
+      return;
+    }
+    try {
+      const text = await extractTextFromImageBuffer(file.buffer);
+      if (!text) {
+        res.status(422).json({ error: "ocr_no_text" });
+        return;
+      }
+      res.json({ text });
+    } catch (e) {
+      console.error("[library] image ocr failed:", e instanceof Error ? e.message : e);
+      res.status(500).json({ error: "ocr_failed" });
+    }
+  });
 
   mountDirectionRoutes(router, root, "/directions");
   mountDirectionRoutes(router, root, "/installations");

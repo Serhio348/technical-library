@@ -66,6 +66,13 @@ export async function fetchSearch(slug: string, query: string, scopePath = ""): 
   return data.items ?? [];
 }
 
+export async function ocrImageFile(file: File): Promise<string> {
+  const form = new FormData();
+  form.set("image", file);
+  const data = await api<{ text: string }>("/api/library/ocr", { form });
+  return data.text;
+}
+
 export async function fetchDirections(): Promise<DirectionsResponse> {
   return api("/api/library/directions");
 }
@@ -229,6 +236,10 @@ export function errorMessage(code: string): string {
       return "ИИ не настроен: укажите DEEPSEEK_API_KEY в .env на сервере.";
     case "ask_failed":
       return "Не удалось получить ответ от ИИ.";
+    case "ocr_no_text":
+      return "На фото не найден текст.";
+    case "ocr_failed":
+      return "Не удалось распознать фото.";
     default:
       return "Произошла ошибка. Попробуйте ещё раз.";
   }

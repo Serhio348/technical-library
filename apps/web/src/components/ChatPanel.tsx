@@ -4,6 +4,7 @@ import { askQuestion, fileUrl } from "../api";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "../chatStorage";
 import type { ChatMessage, ChatSource } from "../types";
 import { SpeechInputButton } from "./SpeechInputButton";
+import { CameraInputButton } from "./CameraInputButton";
 
 const EXPAND_REQUEST_RE =
   /^(?:да|покажи|показать|подробнее|разверни|открой|выведи)(?:\s+(?:полный|подробный))?(?:\s+ответ|\s+текст)?[.!?]*$/iu;
@@ -40,9 +41,16 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [speechHint, setSpeechHint] = useState<string | null>(null);
+  const [composerHint, setComposerHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const voiceBaseRef = useRef("");
+
+  const applyRecognizedText = (text: string): void => {
+    const base = voiceBaseRef.current.trim();
+    const next = base ? `${base} ${text}` : text;
+    setInput(next);
+    voiceBaseRef.current = next;
+  };
 
   const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
     const base = voiceBaseRef.current.trim();
@@ -211,7 +219,7 @@ export function ChatPanel({
       {error ? <p className="tl-chat__error">{error}</p> : null}
 
       <div className="tl-chat__composer">
-        {speechHint ? <p className="tl-chat__speech-hint">{speechHint}</p> : null}
+        {composerHint ? <p className="tl-chat__speech-hint">{composerHint}</p> : null}
         <form
           className="tl-chat__input-row"
           onSubmit={(e) => {
@@ -240,15 +248,25 @@ export function ChatPanel({
               className="tl-chat__action-btn"
               title="Нажмите и говорите — текст появится в поле"
               disabled={!llmConfigured || loading}
-              onErrorChange={setSpeechHint}
+              onErrorChange={setComposerHint}
               onListeningStart={() => {
                 voiceBaseRef.current = input;
               }}
               onTranscript={applyVoiceTranscript}
             />
+            <CameraInputButton
+              className="tl-chat__action-btn"
+              title="Сфотографировать вопрос"
+              disabled={!llmConfigured || loading}
+              onHintChange={setComposerHint}
+              onBeforeCapture={() => {
+                voiceBaseRef.current = input;
+              }}
+              onText={applyRecognizedText}
+            />
             <button
               type="submit"
-              className="tl-btn tl-btn--primary tl-chat__action-btn"
+              className="tl-btn tl-btn--primary tl-chat__action-btn tl-chat__action-btn--send"
               disabled={!llmConfigured || loading || !input.trim()}
               title="Отправить"
             >
