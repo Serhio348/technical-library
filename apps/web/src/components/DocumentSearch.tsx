@@ -36,6 +36,7 @@ export function DocumentSearch({
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [speechHint, setSpeechHint] = useState<string | null>(null);
   const voiceBaseRef = useRef("");
 
   const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
@@ -98,6 +99,7 @@ export function DocumentSearch({
         />
         <SpeechInputButton
           title="Нажмите и говорите — текст появится в строке"
+          onErrorChange={setSpeechHint}
           onListeningStart={() => {
             voiceBaseRef.current = query;
           }}
@@ -117,6 +119,8 @@ export function DocumentSearch({
           </button>
         ) : null}
       </div>
+
+      {speechHint ? <p className="tl-speech-hint">{speechHint}</p> : null}
 
       {debounced ? (
         <div className="tl-search__results">

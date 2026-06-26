@@ -505,11 +505,6 @@ code {
   border-color: rgba(248, 113, 113, 0.35);
 }
 
-.tl-speech-input {
-  position: relative;
-  flex-shrink: 0;
-}
-
 .tl-speech-input__btn--active {
   color: #f87171;
   border-color: rgba(248, 113, 113, 0.45);
@@ -527,21 +522,29 @@ code {
   }
 }
 
-.tl-speech-input__error {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.35rem);
-  z-index: 5;
-  width: max-content;
-  max-width: 220px;
-  padding: 0.35rem 0.5rem;
+.tl-speech-hint,
+.tl-chat__speech-hint {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
   border-radius: 8px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(30, 20, 20, 0.96);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
   color: #fecaca;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   line-height: 1.35;
-  pointer-events: none;
+}
+
+.tl-speech-hint {
+  margin-top: 0.45rem;
+}
+
+.tl-chat__composer {
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.tl-chat__speech-hint {
+  margin: 0.55rem 1rem 0;
 }
 
 .tl-pill {
@@ -1108,10 +1111,9 @@ code {
 
 .tl-chat__input-row {
   display: flex;
-  gap: 0.5rem;
+  align-items: stretch;
+  gap: 0.55rem;
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.12);
 }
 
 .tl-chat__input-row textarea {
@@ -1129,7 +1131,23 @@ code {
   opacity: 0.55;
 }
 
-.tl-chat__input-row .tl-btn {
-  align-self: flex-end;
-  padding: 0.55rem 0.75rem;
+.tl-chat__actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.tl-chat__action-btn {
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.tl-chat__action-btn.tl-btn--primary {
+  min-width: 2.35rem;
 }

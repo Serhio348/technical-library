@@ -40,6 +40,7 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [speechHint, setSpeechHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const voiceBaseRef = useRef("");
 
@@ -209,41 +210,53 @@ export function ChatPanel({
 
       {error ? <p className="tl-chat__error">{error}</p> : null}
 
-      <form
-        className="tl-chat__input-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <textarea
-          rows={2}
-          value={input}
-          disabled={!llmConfigured || loading}
-          placeholder="Ваш вопрос…"
-          onChange={(e) => {
-            voiceBaseRef.current = e.target.value;
-            setInput(e.target.value);
+      <div className="tl-chat__composer">
+        {speechHint ? <p className="tl-chat__speech-hint">{speechHint}</p> : null}
+        <form
+          className="tl-chat__input-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <SpeechInputButton
-          title="Нажмите и говорите — текст появится в поле"
-          disabled={!llmConfigured || loading}
-          onListeningStart={() => {
-            voiceBaseRef.current = input;
-          }}
-          onTranscript={applyVoiceTranscript}
-        />
-        <button type="submit" className="tl-btn tl-btn--primary" disabled={!llmConfigured || loading || !input.trim()}>
-          <Send size={16} />
-        </button>
-      </form>
+        >
+          <textarea
+            rows={2}
+            value={input}
+            disabled={!llmConfigured || loading}
+            placeholder="Ваш вопрос…"
+            onChange={(e) => {
+              voiceBaseRef.current = e.target.value;
+              setInput(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <div className="tl-chat__actions">
+            <SpeechInputButton
+              className="tl-chat__action-btn"
+              title="Нажмите и говорите — текст появится в поле"
+              disabled={!llmConfigured || loading}
+              onErrorChange={setSpeechHint}
+              onListeningStart={() => {
+                voiceBaseRef.current = input;
+              }}
+              onTranscript={applyVoiceTranscript}
+            />
+            <button
+              type="submit"
+              className="tl-btn tl-btn--primary tl-chat__action-btn"
+              disabled={!llmConfigured || loading || !input.trim()}
+              title="Отправить"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </form>
+      </div>
     </aside>
   );
 }

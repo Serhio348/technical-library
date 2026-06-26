@@ -66,11 +66,39 @@ export function useSpeechInput(options: {
   const [supported] = useState(() => getSpeechRecognitionCtor() !== null);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorTimerRef = useRef<number | null>(null);
+
+  const clearError = useCallback((): void => {
+    if (errorTimerRef.current !== null) {
+      window.clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = null;
+    }
+    setError(null);
+  }, []);
+
+  const showError = useCallback(
+    (message: string): void => {
+      if (!message) return;
+      if (errorTimerRef.current !== null) window.clearTimeout(errorTimerRef.current);
+      setError(message);
+      errorTimerRef.current = window.setTimeout(() => {
+        errorTimerRef.current = null;
+        setError(null);
+      }, 4500);
+    },
+    [],
+  );
 
   useEffect(() => {
     onResultRef.current = onResult;
     onListeningStartRef.current = onListeningStart;
   }, [onResult, onListeningStart]);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current !== null) window.clearTimeout(errorTimerRef.current);
+    };
+  }, []);
 
   const stop = useCallback((): void => {
     recognitionRef.current?.stop();
@@ -86,7 +114,7 @@ export function useSpeechInput(options: {
       return;
     }
 
-    setError(null);
+    clearError();
     const recognition = new Ctor();
     recognition.lang = lang;
     recognition.continuous = false;
@@ -100,13 +128,15 @@ export function useSpeechInput(options: {
       const trimmed = transcript.trim();
       if (!trimmed) return;
       const isFinal = event.results[event.results.length - 1]?.isFinal ?? false;
+      if (isFinal) clearError();
       onResultRef.current(trimmed, isFinal);
     };
 
     recognition.onerror = (event) => {
       const code = event.error as SpeechInputError;
+      if (code === "aborted") return;
       const message = ERROR_MESSAGES[code] ?? ERROR_MESSAGES.unknown;
-      if (message) setError(message);
+      if (message) showError(message);
       setListening(false);
     };
 
@@ -121,10 +151,10 @@ export function useSpeechInput(options: {
       recognition.start();
       setListening(true);
     } catch {
-      setError(ERROR_MESSAGES.unknown);
+      showError(ERROR_MESSAGES.unknown);
       setListening(false);
     }
-  }, [lang, listening, stop]);
+  }, [clearError, lang, listening, showError, stop]);
 
   useEffect(() => {
     return () => {
