@@ -32,6 +32,14 @@ const envSchema = z.object({
   ),
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
+  TELEGRAM_BOT_TOKEN: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(20).optional(),
+  ),
+  TELEGRAM_BOT_DISABLED: z.preprocess(
+    (value) => value === "true" || value === "1",
+    z.boolean().default(false),
+  ),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -49,4 +57,8 @@ export function resolvedDefaultScopePath(): string {
 
 export function isDeepSeekConfigured(): boolean {
   return Boolean(env.DEEPSEEK_API_KEY?.trim());
+}
+
+export function isTelegramBotConfigured(): boolean {
+  return Boolean(env.TELEGRAM_BOT_TOKEN?.trim());
 }

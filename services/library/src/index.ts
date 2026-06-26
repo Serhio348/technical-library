@@ -2,8 +2,9 @@ import express from "express";
 import multer from "multer";
 import { existsSync } from "fs";
 import { join } from "path";
-import { env, isDeepSeekConfigured, resolvedDefaultScopePath } from "./config.js";
+import { env, isDeepSeekConfigured, isTelegramBotConfigured, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
+import { startBot, stopBot } from "./bot/index.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -19,6 +20,8 @@ app.get("/health", (_req, res) => {
     ...(defaultScope ? { default_scope_path: defaultScope } : {}),
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
     llm_configured: isDeepSeekConfigured(),
+    telegram_configured: isTelegramBotConfigured(),
+    telegram_running: isTelegramBotConfigured() && !env.TELEGRAM_BOT_DISABLED,
   });
 });
 
@@ -44,11 +47,14 @@ app.use((err: unknown, _req: express.Request, res: express.Response, next: expre
 const server = app.listen(env.LIBRARY_PORT, () => {
   console.log(`technical-library listening on :${env.LIBRARY_PORT}`);
   console.log(`library root: ${env.LIBRARY_ROOT}`);
+  startBot();
 });
 
 function shutdown(signal: string): void {
   console.log(`shutdown: ${signal}`);
-  server.close(() => process.exit(0));
+  void stopBot(signal).finally(() => {
+    server.close(() => process.exit(0));
+  });
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

@@ -72,6 +72,19 @@ cd apps/web && npm ci && npm run dev
 
 Проверка: `GET /health` → `"llm_configured": true`
 
+### Telegram-бот
+
+Бот работает **в том же контейнере**, что и API (как в проекте Employees).
+
+1. Создайте бота у [@BotFather](https://t.me/BotFather) → `/newbot` → скопируйте токен
+2. В `.env`: `TELEGRAM_BOT_TOKEN=...` (локально можно `TELEGRAM_BOT_DISABLED=true`)
+3. Опционально: `DEFAULT_DIRECTION_SLUG=electro`, `DEFAULT_SCOPE_PATH=tkp`
+4. Перезапустите контейнер / `npm run dev`
+
+Команды: `/directions`, `/dir slug`, `/folder путь`, `/search …`, `/ask …`, `/show` (полный ответ).
+
+Проверка: `GET /health` → `"telegram_running": true`
+
 ```bash
 curl -X POST http://127.0.0.1:3021/api/library/directions/gas/ask \
   -H "Content-Type: application/json" \
