@@ -88,10 +88,30 @@ UI: **http://127.0.0.1:3021**
 ## Docker
 
 ```bash
-docker compose up -d --build
+COMPOSE_BAKE=false docker compose up -d --build
 ```
 
-Порт **3021**.
+Контейнер слушает **127.0.0.1:3021** (только localhost). Снаружи — через nginx.
+
+## Nginx (VPS, рядом с osmos)
+
+| Сервис | URL |
+|--------|-----|
+| Osmos | http://192.168.11.83 |
+| **Technical Library** | **http://192.168.11.83:8080** |
+
+Установка:
+
+```bash
+cd /opt/services/technical-library
+sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
+sudo ln -sf /etc/nginx/sites-available/technical-library /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Подробнее: [deploy/nginx/README.md](deploy/nginx/README.md)
+
+Опционально **http://library.local** — прописать `192.168.11.83 library.local` в `hosts` на ПК.
 
 ## Типы документов
 

@@ -13,8 +13,10 @@
 ## VPS
 
 ```text
-/opt/services/osmos-modbus-service/   → :3020
-/opt/services/technical-library/    → :3021
+/opt/services/osmos-modbus-service/   → :80  (nginx)  http://192.168.11.83
+/opt/services/technical-library/    → :3021 (docker, localhost)
+                                      → :8080 (nginx)  http://192.168.11.83:8080
+                                      → :80   library.local (nginx + hosts)
 ```
 
 ## Пример сценария bot
