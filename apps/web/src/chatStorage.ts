@@ -23,7 +23,8 @@ export function loadChatHistory(slug: string, scopePath: string): ChatMessage[] 
 
 export function saveChatHistory(slug: string, scopePath: string, messages: ChatMessage[]): void {
   try {
-    localStorage.setItem(chatKey(slug, scopePath), JSON.stringify(messages.slice(-MAX_MESSAGES)));
+    const slim = messages.map(({ imagePreview: _img, ...rest }) => rest);
+    localStorage.setItem(chatKey(slug, scopePath), JSON.stringify(slim.slice(-MAX_MESSAGES)));
   } catch {
     /* quota or private mode */
   }

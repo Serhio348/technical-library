@@ -1,6 +1,7 @@
 import { buildLibraryContextForQuery, type LibraryContextItem } from "./storage.js";
 import { chatCompletion, type ChatMessage } from "./deepseek.js";
 import { isDeepSeekConfigured } from "./config.js";
+import { extractTextFromImageBuffer } from "./pdfExtract.js";
 
 export type AskHistoryItem = {
   role: "user" | "assistant";
@@ -19,6 +20,8 @@ export type AskResult = {
   sources: AskSource[];
   context_available: boolean;
   mode: AskMode;
+  resolved_question: string;
+  recognized_question?: string;
 };
 
 const FULL_SYSTEM_PROMPT = `Ты помощник по нормативной и технической документации (законы, ГОСТ, ТКП, инструкции).
@@ -109,12 +112,21 @@ export async function answerLibraryQuestion(
   scopePath = "",
   history: unknown = [],
   mode: AskMode = "preview",
+  imageBuffer?: Buffer | null,
 ): Promise<AskResult> {
   if (!isDeepSeekConfigured()) {
     throw new Error("deepseek_not_configured");
   }
 
-  const q = question.trim();
+  let recognizedFromImage: string | null = null;
+  if (imageBuffer?.length) {
+    recognizedFromImage = await extractTextFromImageBuffer(imageBuffer);
+    if (!recognizedFromImage && !question.trim()) {
+      throw new Error("ocr_no_text");
+    }
+  }
+
+  const q = [question.trim(), recognizedFromImage?.trim()].filter(Boolean).join("\n\n");
   if (!q) throw new Error("empty_question");
 
   const items = await fetchContext(root, slug, q, scopePath, mode);
@@ -137,5 +149,7 @@ export async function answerLibraryQuestion(
     sources: items.map((item) => ({ path: item.path, name: item.name })),
     context_available: items.length > 0,
     mode,
+    resolved_question: q,
+    ...(recognizedFromImage ? { recognized_question: recognizedFromImage } : {}),
   };
 }

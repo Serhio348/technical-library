@@ -4,18 +4,22 @@ import { ocrImageFile } from "../api";
 
 export function CameraInputButton({
   onText,
+  onImageSelected,
   onHintChange,
   onBeforeCapture,
   disabled,
   className = "",
   title = "Сфотографировать вопрос",
+  variant = "ocr",
 }: {
-  onText: (text: string) => void;
+  onText?: (text: string) => void;
+  onImageSelected?: (file: File) => void;
   onHintChange?: (message: string | null) => void;
   onBeforeCapture?: () => void;
   disabled?: boolean;
   className?: string;
   title?: string;
+  variant?: "ocr" | "attach";
 }): React.ReactElement {
   const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
@@ -43,11 +47,18 @@ export function CameraInputButton({
 
   const handleFile = async (file: File | undefined): Promise<void> => {
     if (!file || loading) return;
+
+    if (variant === "attach") {
+      onImageSelected?.(file);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+
     setLoading(true);
     setHint("Распознаём текст на фото…");
     try {
       const text = await ocrImageFile(file);
-      onText(text);
+      onText?.(text);
       setHint(null);
     } catch (e) {
       const code = e instanceof Error ? e.message : "ocr_failed";

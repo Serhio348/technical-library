@@ -80,6 +80,8 @@ export type ChatMessage = {
   context_available?: boolean;
   mode?: "preview" | "full";
   pendingQuestion?: string;
+  imagePreview?: string;
+  hasImage?: boolean;
 };
 
 export type AskResponse = {
@@ -87,6 +89,8 @@ export type AskResponse = {
   sources: ChatSource[];
   context_available: boolean;
   mode: "preview" | "full";
+  resolved_question?: string;
+  recognized_question?: string;
 };
 
 export type SearchHit = {

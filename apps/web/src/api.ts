@@ -45,13 +45,27 @@ export async function askQuestion(
   scopePath: string,
   history: ChatMessage[] = [],
   mode: "preview" | "full" = "preview",
+  image?: File | null,
 ): Promise<AskResponse> {
-  return api(`/api/library/directions/${encodeURIComponent(slug)}/ask`, {
+  const path = `/api/library/directions/${encodeURIComponent(slug)}/ask`;
+  const historyPayload = history.map((m) => ({ role: m.role, content: m.content }));
+
+  if (image) {
+    const form = new FormData();
+    form.set("message", message);
+    form.set("scope_path", scopePath);
+    form.set("history", JSON.stringify(historyPayload));
+    form.set("mode", mode);
+    form.set("image", image);
+    return api(path, { method: "POST", form });
+  }
+
+  return api(path, {
     method: "POST",
     json: {
       message,
       scope_path: scopePath,
-      history: history.map((m) => ({ role: m.role, content: m.content })),
+      history: historyPayload,
       mode,
     },
   });

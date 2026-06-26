@@ -1,10 +1,12 @@
 import { MessageSquare, Send, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { askQuestion, fileUrl } from "../api";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "../chatStorage";
 import type { ChatMessage, ChatSource } from "../types";
 import { SpeechInputButton } from "./SpeechInputButton";
 import { CameraInputButton } from "./CameraInputButton";
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const EXPAND_REQUEST_RE =
   /^(?:да|покажи|показать|подробнее|разверни|открой|выведи)(?:\s+(?:полный|подробный))?(?:\s+ответ|\s+текст)?[.!?]*$/iu;
@@ -23,6 +25,12 @@ function findPendingPreview(messages: ChatMessage[]): { question: string; histor
   return null;
 }
 
+function userMessageLabel(text: string, hasImage: boolean): string {
+  if (text && hasImage) return text;
+  if (text) return text;
+  return "📷 Вопрос с фото";
+}
+
 export function ChatPanel({
   slug,
   scopePath,
@@ -38,19 +46,42 @@ export function ChatPanel({
 }): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory(slug, scopePath));
   const [input, setInput] = useState("");
+  const [attachedImage, setAttachedImage] = useState<File | null>(null);
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState<"preview" | "full" | null>(null);
+  const [loadingWithImage, setLoadingWithImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [composerHint, setComposerHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const voiceBaseRef = useRef("");
 
-  const applyRecognizedText = (text: string): void => {
-    const base = voiceBaseRef.current.trim();
-    const next = base ? `${base} ${text}` : text;
-    setInput(next);
-    voiceBaseRef.current = next;
-  };
+  const clearAttachment = useCallback((): void => {
+    setAttachedImage(null);
+    setAttachedPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
+  const attachImage = useCallback(
+    (file: File): void => {
+      if (!file.type.startsWith("image/")) {
+        setComposerHint("Можно прикрепить только изображение.");
+        return;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setComposerHint("Фото слишком большое (макс. 8 МБ).");
+        return;
+      }
+      clearAttachment();
+      setAttachedImage(file);
+      setAttachedPreview(URL.createObjectURL(file));
+      setComposerHint(null);
+    },
+    [clearAttachment],
+  );
 
   const applyVoiceTranscript = (text: string, isFinal: boolean): void => {
     const base = voiceBaseRef.current.trim();
@@ -67,68 +98,140 @@ export function ChatPanel({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
+  useEffect(() => {
+    return () => {
+      if (attachedPreview) URL.revokeObjectURL(attachedPreview);
+    };
+  }, [attachedPreview]);
+
   const requestAnswer = async (
     question: string,
     mode: "preview" | "full",
     history: ChatMessage[],
-    userLabel?: string,
+    options?: {
+      userLabel?: string;
+      image?: File | null;
+      imagePreview?: string | null;
+      skipUserBubble?: boolean;
+    },
   ): Promise<void> => {
-    if (userLabel) {
-      setMessages((prev) => [...prev, { role: "user", content: userLabel }]);
-    }
-    setLoading(true);
-    setLoadingMode(mode);
-    try {
-      const result = await askQuestion(slug, question, scopePath, history, mode);
+    const image = options?.image ?? null;
+    const imagePreview = options?.imagePreview ?? null;
+
+    if (!options?.skipUserBubble) {
+      const label = options?.userLabel ?? userMessageLabel(question, !!image);
       setMessages((prev) => [
         ...prev,
         {
+          role: "user",
+          content: label,
+          ...(imagePreview ? { imagePreview } : {}),
+          ...(image ? { hasImage: true } : {}),
+        },
+      ]);
+    }
+
+    setLoading(true);
+    setLoadingMode(mode);
+    setLoadingWithImage(!!image);
+    try {
+      const result = await askQuestion(slug, question, scopePath, history, mode, image);
+      const resolvedQuestion = result.resolved_question ?? question;
+
+      setMessages((prev) => {
+        const next = [...prev];
+        if (image) {
+          let userIdx = -1;
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            if (next[i]?.role === "user") {
+              userIdx = i;
+              break;
+            }
+          }
+          if (userIdx >= 0) {
+            const recognized = result.recognized_question?.trim();
+            const content = recognized
+              ? question.trim()
+                ? `${question.trim()}\n\n${recognized}`
+                : recognized
+              : next[userIdx]!.content;
+            next[userIdx] = {
+              ...next[userIdx]!,
+              content,
+              hasImage: true,
+            };
+          }
+        }
+        next.push({
           role: "assistant",
           content: result.answer,
           sources: result.sources,
           context_available: result.context_available,
           mode: result.mode,
-          pendingQuestion: mode === "preview" ? question : undefined,
-        },
-      ]);
+          pendingQuestion: mode === "preview" ? resolvedQuestion : undefined,
+        });
+        return next;
+      });
+
+      if (result.recognized_question) {
+        setComposerHint(`Распознано с фото: ${result.recognized_question.slice(0, 120)}${result.recognized_question.length > 120 ? "…" : ""}`);
+        window.setTimeout(() => setComposerHint(null), 5000);
+      }
     } catch (e) {
       const code = e instanceof Error ? e.message : "ask_failed";
       setError(
         code === "deepseek_not_configured"
           ? "ИИ не настроен: добавьте DEEPSEEK_API_KEY в .env на сервере."
-          : code === "ask_failed"
-            ? "Не удалось получить ответ. Проверьте ключ API и логи сервера."
-            : "Ошибка запроса.",
+          : code === "ocr_no_text"
+            ? "На фото не удалось прочитать текст. Снимите чётче или добавьте подпись к фото."
+            : code === "ask_failed"
+              ? "Не удалось получить ответ. Проверьте ключ API и логи сервера."
+              : "Ошибка запроса.",
       );
     } finally {
       setLoading(false);
       setLoadingMode(null);
+      setLoadingWithImage(false);
     }
   };
 
   const send = async (): Promise<void> => {
     const text = input.trim();
-    if (!text || loading || !llmConfigured) return;
+    const image = attachedImage;
+    if ((!text && !image) || loading || !llmConfigured) return;
+
     setInput("");
     voiceBaseRef.current = "";
+    const preview = attachedPreview;
+    clearAttachment();
     setError(null);
 
-    const pending = isExpandRequest(text) ? findPendingPreview(messages) : null;
+    const pending = text && isExpandRequest(text) ? findPendingPreview(messages) : null;
     if (pending) {
-      await requestAnswer(pending.question, "full", pending.history, text);
+      await requestAnswer(pending.question, "full", pending.history, { userLabel: text });
       return;
     }
 
-    const userMsg: ChatMessage = { role: "user", content: text };
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: userMessageLabel(text, !!image),
+      ...(preview ? { imagePreview: preview } : {}),
+      ...(image ? { hasImage: true } : {}),
+    };
+    const history = [...messages, userMsg];
     setMessages((prev) => [...prev, userMsg]);
-    await requestAnswer(text, "preview", [...messages, userMsg]);
+    await requestAnswer(text, "preview", history, {
+      image,
+      imagePreview: preview,
+      skipUserBubble: true,
+    });
   };
 
   const expandAnswer = async (msg: ChatMessage, msgIndex: number): Promise<void> => {
     if (!msg.pendingQuestion || loading) return;
     setError(null);
     const history = messages.slice(0, msgIndex + 1);
-    await requestAnswer(msg.pendingQuestion, "full", history, "Показать подробный ответ");
+    await requestAnswer(msg.pendingQuestion, "full", history, { userLabel: "Показать подробный ответ" });
   };
 
   const handleClearHistory = (): void => {
@@ -139,7 +242,23 @@ export function ChatPanel({
     setError(null);
   };
 
+  const handlePaste = (e: React.ClipboardEvent): void => {
+    const item = Array.from(e.clipboardData.items).find((entry) => entry.type.startsWith("image/"));
+    if (!item) return;
+    e.preventDefault();
+    const file = item.getAsFile();
+    if (file) attachImage(file);
+  };
+
+  const handleDrop = (e: React.DragEvent): void => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = Array.from(e.dataTransfer.files).find((entry) => entry.type.startsWith("image/"));
+    if (file) attachImage(file);
+  };
+
   const scopeLabel = scopePath ? scopePath.split("/").pop() : "всё направление";
+  const canSend = (input.trim().length > 0 || attachedImage !== null) && llmConfigured && !loading;
 
   return (
     <aside className="tl-chat">
@@ -175,12 +294,17 @@ export function ChatPanel({
       <div className="tl-chat__messages">
         {messages.length === 0 ? (
           <p className="tl-chat__empty">
-            Задайте вопрос по нормативке в текущей папке. Сначала ассистент подскажет, в каком разделе искать
-            ответ, а полный текст с цитатами можно запросить кнопкой или словом «покажи».
+            Задайте вопрос текстом, голосом или прикрепите фото вопроса прямо в поле ввода — ассистент
+            расшифрует снимок и подскажет, где искать ответ в документах.
           </p>
         ) : null}
         {messages.map((msg, idx) => (
           <div key={idx} className={`tl-chat__msg tl-chat__msg--${msg.role}`}>
+            {msg.imagePreview ? (
+              <img src={msg.imagePreview} alt="" className="tl-chat__msg-image" />
+            ) : msg.hasImage ? (
+              <p className="tl-chat__msg-image-placeholder">📷 Фото вопроса</p>
+            ) : null}
             <p className="tl-chat__msg-text">{msg.content}</p>
             {msg.role === "assistant" && msg.mode === "preview" && msg.pendingQuestion ? (
               <button
@@ -210,7 +334,11 @@ export function ChatPanel({
         ))}
         {loading ? (
           <p className="tl-chat__typing">
-            {loadingMode === "full" ? "Формирую подробный ответ…" : "Ищу раздел в документах…"}
+            {loadingWithImage
+              ? "Распознаём фото и ищу в документах…"
+              : loadingMode === "full"
+                ? "Формирую подробный ответ…"
+                : "Ищу раздел в документах…"}
           </p>
         ) : null}
         <div ref={bottomRef} />
@@ -221,32 +349,54 @@ export function ChatPanel({
       <div className="tl-chat__composer">
         {composerHint ? <p className="tl-chat__speech-hint">{composerHint}</p> : null}
         <form
-          className="tl-chat__input-row"
+          className={`tl-chat__input-row${dragOver ? " tl-chat__input-row--drag" : ""}`}
           onSubmit={(e) => {
             e.preventDefault();
             void send();
           }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
         >
-          <textarea
-            rows={2}
-            value={input}
-            disabled={!llmConfigured || loading}
-            placeholder="Ваш вопрос…"
-            onChange={(e) => {
-              voiceBaseRef.current = e.target.value;
-              setInput(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-          />
+          <div className="tl-chat__composer-field">
+            {attachedPreview ? (
+              <div className="tl-chat__attachment">
+                <img src={attachedPreview} alt="Прикреплённое фото" className="tl-chat__attachment-thumb" />
+                <button
+                  type="button"
+                  className="tl-chat__attachment-remove"
+                  title="Убрать фото"
+                  onClick={clearAttachment}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : null}
+            <textarea
+              rows={2}
+              value={input}
+              disabled={!llmConfigured || loading}
+              placeholder="Ваш вопрос… можно вставить или перетащить фото"
+              onPaste={handlePaste}
+              onChange={(e) => {
+                voiceBaseRef.current = e.target.value;
+                setInput(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+            />
+          </div>
           <div className="tl-chat__actions">
             <SpeechInputButton
               className="tl-chat__action-btn"
-              title="Нажмите и говорите — текст появится в поле"
+              title="Голосовой ввод"
               disabled={!llmConfigured || loading}
               onErrorChange={setComposerHint}
               onListeningStart={() => {
@@ -256,18 +406,16 @@ export function ChatPanel({
             />
             <CameraInputButton
               className="tl-chat__action-btn"
-              title="Сфотографировать вопрос"
+              variant="attach"
+              title="Прикрепить фото вопроса"
               disabled={!llmConfigured || loading}
               onHintChange={setComposerHint}
-              onBeforeCapture={() => {
-                voiceBaseRef.current = input;
-              }}
-              onText={applyRecognizedText}
+              onImageSelected={attachImage}
             />
             <button
               type="submit"
               className="tl-btn tl-btn--primary tl-chat__action-btn tl-chat__action-btn--send"
-              disabled={!llmConfigured || loading || !input.trim()}
+              disabled={!canSend}
               title="Отправить"
             >
               <Send size={16} />

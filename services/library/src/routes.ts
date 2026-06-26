@@ -47,6 +47,11 @@ const photoOcrUpload = multer({
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
 });
 
+const askUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+});
+
 function parseCsvQuery(value: unknown): string[] {
   if (typeof value !== "string" || !value.trim()) return [];
   return value
@@ -348,23 +353,53 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
-  router.post(`${basePath}/:slug/ask`, async (req, res) => {
+  router.post(`${basePath}/:slug/ask`, askUpload.single("image"), async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const scopePath = typeof req.body?.scope_path === "string" ? req.body.scope_path.trim() : "";
-    const history = req.body?.history;
+    const historyRaw = typeof req.body?.history === "string" ? req.body.history : req.body?.history;
+    let history: unknown = [];
+    if (typeof historyRaw === "string") {
+      try {
+        history = JSON.parse(historyRaw) as unknown;
+      } catch {
+        history = [];
+      }
+    } else {
+      history = historyRaw;
+    }
     const mode = req.body?.mode === "full" ? "full" : "preview";
-    if (!isValidSlug(slug) || !message || !isValidRelativePath(scopePath)) {
+    const imageBuffer = req.file?.buffer ?? null;
+    if (!isValidSlug(slug) || (!message && !imageBuffer?.length) || !isValidRelativePath(scopePath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
+    if (imageBuffer?.length) {
+      const mime = req.file?.mimetype?.toLowerCase() ?? "";
+      if (!mime.startsWith("image/")) {
+        res.status(400).json({ error: "invalid_image_type" });
+        return;
+      }
+    }
     try {
-      const result = await answerLibraryQuestion(root, slug, message, scopePath, history, mode);
+      const result = await answerLibraryQuestion(
+        root,
+        slug,
+        message,
+        scopePath,
+        history,
+        mode,
+        imageBuffer,
+      );
       res.json(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "deepseek_not_configured") {
         res.status(503).json({ error: "deepseek_not_configured" });
+        return;
+      }
+      if (msg === "ocr_no_text") {
+        res.status(422).json({ error: "ocr_no_text" });
         return;
       }
       if (msg === "empty_question") {
