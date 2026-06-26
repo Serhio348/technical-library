@@ -6,6 +6,7 @@
 - [x] Направления = папки верхнего уровня (`/directions`)
 - [x] Подвиды = вложенные папки внутри направления
 - [x] Веб-UI (`apps/web`) — карточки направлений, подпапки, upload
+- [x] Чат в UI — `POST .../directions/:slug/ask` (DeepSeek + контекст из индекса)
 - [ ] Telegram-bot (отдельный repo)
 - [ ] Пользователи / права на направление
 - [ ] Метаданные НПА: дата редакции, статус
@@ -24,4 +25,4 @@
 1. `/newdirection gas Газоснабжение`
 2. `/newfolder tkp`
 3. Upload PDF в `gas/tkp/`
-4. Вопрос → `GET .../directions/gas/context?q=...&scope_path=tkp`
+4. Вопрос в UI (кнопка «Чат») или `POST .../directions/gas/ask` с `scope_path=tkp`

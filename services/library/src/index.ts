@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import { existsSync } from "fs";
 import { join } from "path";
-import { env, resolvedDefaultScopePath } from "./config.js";
+import { env, isDeepSeekConfigured, resolvedDefaultScopePath } from "./config.js";
 import { createLibraryRouter } from "./routes.js";
 
 const app = express();
@@ -18,6 +18,7 @@ app.get("/health", (_req, res) => {
     ...(env.DEFAULT_DIRECTION_SLUG ? { default_direction: env.DEFAULT_DIRECTION_SLUG } : {}),
     ...(defaultScope ? { default_scope_path: defaultScope } : {}),
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
+    llm_configured: isDeepSeekConfigured(),
   });
 });
 

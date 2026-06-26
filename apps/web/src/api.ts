@@ -1,4 +1,6 @@
 import type {
+  AskResponse,
+  ChatMessage,
   Direction,
   DirectionsResponse,
   DocumentCatalogEntry,
@@ -56,8 +58,24 @@ async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchHealth(): Promise<{ status: string; max_file_mb?: number }> {
+export async function fetchHealth(): Promise<{ status: string; max_file_mb?: number; llm_configured?: boolean }> {
   return api("/health");
+}
+
+export async function askQuestion(
+  slug: string,
+  message: string,
+  scopePath: string,
+  history: ChatMessage[] = [],
+): Promise<AskResponse> {
+  return api(`/api/library/directions/${encodeURIComponent(slug)}/ask`, {
+    method: "POST",
+    json: {
+      message,
+      scope_path: scopePath,
+      history: history.map((m) => ({ role: m.role, content: m.content })),
+    },
+  });
 }
 
 export async function fetchDirections(): Promise<DirectionsResponse> {
@@ -219,6 +237,10 @@ export function errorMessage(code: string): string {
       return "Индексация уже выполняется — дождитесь завершения.";
     case "job_not_found":
       return "Задача индексации не найдена.";
+    case "deepseek_not_configured":
+      return "ИИ не настроен: укажите DEEPSEEK_API_KEY в .env на сервере.";
+    case "ask_failed":
+      return "Не удалось получить ответ от ИИ.";
     default:
       return "Произошла ошибка. Попробуйте ещё раз.";
   }

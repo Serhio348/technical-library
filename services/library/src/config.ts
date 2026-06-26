@@ -26,6 +26,12 @@ const envSchema = z.object({
   LIBRARY_MAX_FILE_MB: z.coerce.number().int().positive().default(50),
   LIBRARY_OCR_MAX_PAGES: z.coerce.number().int().positive().default(150),
   LIBRARY_OCR_TIMEOUT_SEC: z.coerce.number().int().positive().default(900),
+  DEEPSEEK_API_KEY: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(8).optional(),
+  ),
+  DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
+  DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -39,4 +45,8 @@ export function normalizeScopePath(rawPath: string): string {
 
 export function resolvedDefaultScopePath(): string {
   return normalizeScopePath(env.DEFAULT_SCOPE_PATH);
+}
+
+export function isDeepSeekConfigured(): boolean {
+  return Boolean(env.DEEPSEEK_API_KEY?.trim());
 }

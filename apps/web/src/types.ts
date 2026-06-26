@@ -68,6 +68,24 @@ export type IndexJob = {
   message: string;
 };
 
+export type ChatSource = {
+  path: string;
+  name: string;
+};
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  sources?: ChatSource[];
+  context_available?: boolean;
+};
+
+export type AskResponse = {
+  answer: string;
+  sources: ChatSource[];
+  context_available: boolean;
+};
+
 export const DOC_TYPE_LABELS: Record<DocumentType, string> = {
   law: "Закон",
   standard: "ГОСТ / СП",

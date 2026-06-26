@@ -37,6 +37,11 @@ export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.Rea
               <span className="tl-index-panel__eta">
                 Осталось: {formatDuration(job.eta_seconds)} · прошло {formatDuration(job.elapsed_seconds)}
               </span>
+              {job.current_file && job.percent >= 88 ? (
+                <span className="tl-index-panel__hint">
+                  OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.
+                </span>
+              ) : null}
             </span>
           ) : job.status === "done" ? (
             <span className="tl-index-panel__meta-row">

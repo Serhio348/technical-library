@@ -5,6 +5,7 @@ import {
   FolderPlus,
   KeyRound,
   Layers,
+  MessageSquare,
   MoreHorizontal,
   Plus,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IndexProgressPanel } from "./components/IndexProgressPanel";
+import { ChatPanel } from "./components/ChatPanel";
 import {
   createDirection,
   createFolder,
@@ -60,6 +62,8 @@ export function App(): React.ReactElement {
   const [secretDraft, setSecretDraft] = useState(getLibrarySecret());
   const [createTitle, setCreateTitle] = useState("");
   const [maxFileMb, setMaxFileMb] = useState(200);
+  const [llmConfigured, setLlmConfigured] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [indexJob, setIndexJob] = useState<IndexJob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,6 +93,7 @@ export function App(): React.ReactElement {
       try {
         const health = await fetchHealth();
         if (health.max_file_mb) setMaxFileMb(health.max_file_mb);
+        setLlmConfigured(Boolean(health.llm_configured));
         await reloadDirections();
       } catch {
         setError(errorMessage("library_unavailable"));
@@ -328,6 +333,9 @@ export function App(): React.ReactElement {
             indexRunning={indexJob?.status === "running"}
             onReindexFolder={() => void handleReindexFolder()}
             onReindexFile={(path) => void handleReindexFile(path)}
+            llmConfigured={llmConfigured}
+            chatOpen={chatOpen}
+            onToggleChat={() => setChatOpen((v) => !v)}
           />
         ) : (
           <div className="tl-state">Направление не найдено.</div>
@@ -504,6 +512,9 @@ function DirectionView({
   indexRunning,
   onReindexFolder,
   onReindexFile,
+  llmConfigured,
+  chatOpen,
+  onToggleChat,
 }: {
   direction: Direction;
   tree: LibraryTree;
@@ -527,6 +538,9 @@ function DirectionView({
   indexRunning: boolean;
   onReindexFolder: () => void;
   onReindexFile: (path: string) => void;
+  llmConfigured: boolean;
+  chatOpen: boolean;
+  onToggleChat: () => void;
 }): React.ReactElement {
   const hue = directionHue(direction.slug);
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;
@@ -543,7 +557,7 @@ function DirectionView({
   }, [menuOpen]);
 
   return (
-    <div className="tl-workspace" style={{ "--dir-hue": hue } as React.CSSProperties}>
+    <div className={`tl-workspace${chatOpen ? " tl-workspace--chat" : ""}`} style={{ "--dir-hue": hue } as React.CSSProperties}>
       <aside className="tl-sidebar">
         <div className="tl-sidebar__direction">
           <h2>{direction.title}</h2>
@@ -604,6 +618,15 @@ function DirectionView({
           </nav>
 
           <div className="tl-content__actions">
+            <button
+              type="button"
+              className={`tl-btn tl-btn--ghost${chatOpen ? " tl-btn--active" : ""}`}
+              onClick={onToggleChat}
+              title="Спросить по документам"
+            >
+              <MessageSquare size={16} />
+              Чат
+            </button>
             <select
               className="tl-select"
               value={uploadDocType}
@@ -749,6 +772,16 @@ function DirectionView({
           </div>
         )}
       </section>
+
+      {chatOpen ? (
+        <ChatPanel
+          slug={direction.slug}
+          scopePath={currentPath}
+          directionTitle={direction.title}
+          llmConfigured={llmConfigured}
+          onClose={onToggleChat}
+        />
+      ) : null}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./path
 import { ensureUniqueSlug } from "./slugify.js";
 import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
+import { answerLibraryQuestion } from "./ask.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
 import { isValidDocumentType } from "./documentCatalog.js";
 import {
@@ -334,6 +335,33 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       res.json({ items, direction: slug });
     } catch {
       res.status(500).json({ error: "library_unavailable" });
+    }
+  });
+
+  router.post(`${basePath}/:slug/ask`, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const scopePath = typeof req.body?.scope_path === "string" ? req.body.scope_path.trim() : "";
+    const history = req.body?.history;
+    if (!isValidSlug(slug) || !message || !isValidRelativePath(scopePath)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    try {
+      const result = await answerLibraryQuestion(root, slug, message, scopePath, history);
+      res.json(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "deepseek_not_configured") {
+        res.status(503).json({ error: "deepseek_not_configured" });
+        return;
+      }
+      if (msg === "empty_question") {
+        res.status(400).json({ error: "invalid_params" });
+        return;
+      }
+      console.error("[library] ask failed:", msg || e);
+      res.status(500).json({ error: "ask_failed" });
     }
   });
 

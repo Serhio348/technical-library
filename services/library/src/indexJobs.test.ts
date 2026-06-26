@@ -27,6 +27,16 @@ describe("inFileProgressWeight", () => {
     const w2 = inFileProgressWeight("a.pdf", t0, 60_000, t0 + 30_000);
     expect(w2).toBeGreaterThan(w1);
   });
+
+  it("creeps past plateau during long OCR", () => {
+    const t0 = 1_000_000;
+    const estimate = 60_000;
+    const atEstimate = inFileProgressWeight("a.pdf", t0, estimate, t0 + estimate);
+    const later = inFileProgressWeight("a.pdf", t0, estimate, t0 + estimate * 2);
+    expect(atEstimate).toBeCloseTo(0.92, 2);
+    expect(later).toBeGreaterThan(atEstimate);
+    expect(later).toBeLessThanOrEqual(0.97);
+  });
 });
 
 describe("computeEtaSeconds", () => {

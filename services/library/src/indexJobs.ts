@@ -43,7 +43,7 @@ function pruneJobs(): void {
   }
 }
 
-/** Доля текущего файла (0…~0.92), пока OCR ещё идёт. */
+/** Доля текущего файла (0…~0.97), пока OCR ещё идёт. */
 export function inFileProgressWeight(
   currentFile: string | null,
   fileStartedAtMs: number | null,
@@ -53,8 +53,16 @@ export function inFileProgressWeight(
   if (!currentFile || !fileStartedAtMs) return 0;
   const elapsed = Math.max(0, nowMs - fileStartedAtMs);
   if (elapsed <= 0) return 0.03;
-  const ratio = Math.min(1, elapsed / fileEstimateMs);
-  return 0.03 + ratio * 0.89;
+
+  const estimate = Math.max(fileEstimateMs, 30_000);
+  const fastRatio = Math.min(1, elapsed / estimate);
+  const fastWeight = 0.03 + fastRatio * 0.89; // до ~92% на типичном файле
+
+  if (fastRatio < 1) return fastWeight;
+
+  // Долгий OCR: ползём ещё до ~97% за следующие 2× оценку (чтобы не «залипало» на 92%)
+  const overtimeRatio = Math.min(1, (elapsed - estimate) / (estimate * 2));
+  return fastWeight + overtimeRatio * 0.05;
 }
 
 export function computePercent(

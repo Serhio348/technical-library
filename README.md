@@ -63,6 +63,21 @@ cd apps/web && npm ci && npm run dev
 
 Для записи (создание направления, upload) укажите в UI **Доступ → x-library-secret** (значение `LIBRARY_SHARED_SECRET` из `.env`; если секрет пустой — запись без ключа).
 
+### Чат по документам (ИИ)
+
+1. Добавьте в `.env`: `DEEPSEEK_API_KEY=sk-...` (ключ [DeepSeek API](https://platform.deepseek.com/))
+2. Перезапустите API / контейнер
+3. В UI откройте направление → кнопка **Чат** (справа от загрузки)
+4. Задайте вопрос по текущей папке; ответ опирается на проиндексированные PDF (метка **ИИ** у файла)
+
+Проверка: `GET /health` → `"llm_configured": true`
+
+```bash
+curl -X POST http://127.0.0.1:3021/api/library/directions/gas/ask \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Какие требования к газопроводу?","scope_path":"tkp"}'
+```
+
 ### Production (UI + API в одном контейнере)
 
 ```bash
@@ -81,6 +96,7 @@ UI: **http://127.0.0.1:3021**
 | POST | `/api/library/directions/:slug/folders` | Подпапка `{ path }` |
 | POST | `/api/library/directions/:slug/upload` | Upload PDF |
 | GET | `/api/library/directions/:slug/context?q=` | Контекст для LLM |
+| POST | `/api/library/directions/:slug/ask` | Вопрос по документам (DeepSeek) |
 | POST | `/api/library/directions/:slug/reindex` | Переиндекс OCR |
 
 > `/api/library/installations/*` — устаревший alias тех же маршрутов.
