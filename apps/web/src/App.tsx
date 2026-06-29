@@ -669,7 +669,9 @@ function DirectionView({
                     <span className="tl-doc-row__title">
                       <span className="tl-doc-row__name">{file.name}</span>
                       {file.text_index_status === "ready" ? (
-                        <span className="tl-pill tl-pill--ok">ИИ</span>
+                        <span className="tl-pill tl-pill--ok" title="Текст извлечён — доступен поиск и вопросы ИИ">
+                          ИИ
+                        </span>
                       ) : file.text_index_status === "partial" ? (
                         <span className="tl-pill tl-pill--warn" title={file.text_index_note ?? ""}>
                           ИИ~

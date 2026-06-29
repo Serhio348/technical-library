@@ -1,6 +1,18 @@
 import { formatDuration } from "../api";
 import type { IndexJob } from "../types";
 
+function indexHintForFile(filePath: string | null, percent: number): string | null {
+  if (!filePath) return null;
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".pdf") && percent >= 88) {
+    return "OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.";
+  }
+  if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt") || lower.endsWith(".md")) {
+    return "Word и текстовые файлы индексируются за секунды — OCR не нужен.";
+  }
+  return null;
+}
+
 export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.ReactElement | null {
   if (!job) return null;
 
@@ -37,11 +49,10 @@ export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.Rea
               <span className="tl-index-panel__eta">
                 Осталось: {formatDuration(job.eta_seconds)} · прошло {formatDuration(job.elapsed_seconds)}
               </span>
-              {job.current_file && job.percent >= 88 ? (
-                <span className="tl-index-panel__hint">
-                  OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.
-                </span>
-              ) : null}
+              {(() => {
+                const hint = indexHintForFile(job.current_file, job.percent);
+                return hint ? <span className="tl-index-panel__hint">{hint}</span> : null;
+              })()}
             </span>
           ) : job.status === "done" ? (
             <span className="tl-index-panel__meta-row">

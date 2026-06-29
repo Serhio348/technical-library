@@ -83,8 +83,8 @@ async function runFilesIndexJob(
           const item = await reindexSingleFile(root, slug, path);
           updateIndexJobFileDone(jobId, item.ok);
         } else {
-          await indexFileText(root, slug, path);
-          updateIndexJobFileDone(jobId, true);
+          const outcome = await indexFileText(root, slug, path);
+          updateIndexJobFileDone(jobId, Boolean(outcome.text?.trim()));
         }
       } catch {
         updateIndexJobFileDone(jobId, false);

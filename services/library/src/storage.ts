@@ -951,11 +951,13 @@ export async function reindexSingleFile(
     await removeExtractedSidecar(root, slug, rel);
     await writeExtractedSidecar(root, slug, rel, outcome);
     await ensureCatalogSidecar(root, slug, rel);
+    const chars = outcome.text?.length ?? 0;
     return {
       path: rel,
-      ok: true,
+      ok: chars > 0,
       extractor: outcome.meta?.extractor ?? null,
-      chars: outcome.text?.length ?? 0,
+      chars,
+      ...(chars > 0 ? {} : { error: "extract_no_text" }),
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "reindex_failed";

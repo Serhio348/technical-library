@@ -43,7 +43,25 @@ function pruneJobs(): void {
   }
 }
 
-/** Доля текущего файла (0…~0.97), пока OCR ещё идёт. */
+export function indexActionLabel(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".pdf")) return "OCR";
+  if (lower.endsWith(".docx") || lower.endsWith(".doc")) return "Word";
+  if (lower.endsWith(".txt") || lower.endsWith(".md")) return "Текст";
+  if (/\.(jpe?g|png)$/.test(lower)) return "OCR фото";
+  return "Индексация";
+}
+
+export function indexActionHint(filePath: string): string | null {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    return "OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.";
+  }
+  if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt") || lower.endsWith(".md")) {
+    return "Word и текстовые файлы индексируются за секунды — OCR не нужен.";
+  }
+  return null;
+}
 export function inFileProgressWeight(
   currentFile: string | null,
   fileStartedAtMs: number | null,
@@ -210,12 +228,14 @@ export function updateIndexJobFileStart(jobId: string, filePath: string, index: 
   const job = jobs.get(jobId);
   if (!job || job.status !== "running") return;
   const name = filePath.split("/").pop() ?? filePath;
+  const action = indexActionLabel(filePath);
+  const slowHint = action === "OCR" ? " (может занять несколько минут)" : "";
   touchJob(job, {
     phase: "indexing",
     total,
     current_file: filePath,
     file_started_at_ms: Date.now(),
-    message: `OCR ${index + 1}/${total}: ${name} (может занять несколько минут)`,
+    message: `${action} ${index + 1}/${total}: ${name}${slowHint}`,
   });
 }
 
