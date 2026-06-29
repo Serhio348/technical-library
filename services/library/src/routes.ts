@@ -6,7 +6,7 @@ import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
 import { ensureUniqueSlug } from "./slugify.js";
-import { getIndexJob, listActiveIndexJobs } from "./indexJobs.js";
+import { findRunningIndexJob, getIndexJob, listActiveIndexJobs } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
 import {
