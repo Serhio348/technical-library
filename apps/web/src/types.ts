@@ -55,7 +55,7 @@ export type IndexJob = {
   job_id: string;
   slug: string;
   scope_path: string;
-  status: "running" | "done" | "failed";
+  status: "queued" | "running" | "done" | "failed";
   phase: "scanning" | "indexing";
   total: number;
   processed: number;
@@ -65,6 +65,7 @@ export type IndexJob = {
   current_file: string | null;
   elapsed_seconds: number;
   eta_seconds: number | null;
+  queue_position?: number | null;
   message: string;
 };
 

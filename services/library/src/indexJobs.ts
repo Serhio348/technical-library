@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { env } from "./config.js";
+import { _resetIndexJobQueueForTests } from "./indexJobQueue.js";
 
-export type IndexJobStatus = "running" | "done" | "failed";
+export type IndexJobStatus = "queued" | "running" | "done" | "failed";
 
 export type IndexJobPhase = "scanning" | "indexing";
 
@@ -19,6 +20,7 @@ export type IndexJobSnapshot = {
   current_file: string | null;
   elapsed_seconds: number;
   eta_seconds: number | null;
+  queue_position: number | null;
   message: string;
 };
 
@@ -129,25 +131,34 @@ export function computeEtaSeconds(
 function snapshot(job: IndexJob): IndexJobSnapshot {
   const fileEstimateMs = typicalFileMs();
   const nowMs = Date.now();
-  const elapsed_seconds = Math.max(0, Math.round((nowMs - job.started_at_ms) / 1000));
-  const percent = computePercent(
-    job.processed,
-    job.total,
-    job.phase,
-    job.current_file,
-    job.file_started_at_ms,
-    nowMs,
-    fileEstimateMs,
-  );
-  const eta_seconds = computeEtaSeconds(
-    job.started_at_ms,
-    job.processed,
-    job.total,
-    job.current_file,
-    job.file_started_at_ms,
-    nowMs,
-    fileEstimateMs,
-  );
+  const elapsed_seconds =
+    job.status === "queued"
+      ? 0
+      : Math.max(0, Math.round((nowMs - job.started_at_ms) / 1000));
+  const percent =
+    job.status === "queued"
+      ? 0
+      : computePercent(
+          job.processed,
+          job.total,
+          job.phase,
+          job.current_file,
+          job.file_started_at_ms,
+          nowMs,
+          fileEstimateMs,
+        );
+  const eta_seconds =
+    job.status === "queued"
+      ? null
+      : computeEtaSeconds(
+          job.started_at_ms,
+          job.processed,
+          job.total,
+          job.current_file,
+          job.file_started_at_ms,
+          nowMs,
+          fileEstimateMs,
+        );
   return {
     job_id: job.job_id,
     slug: job.slug,
@@ -162,6 +173,7 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
     current_file: job.current_file,
     elapsed_seconds,
     eta_seconds,
+    queue_position: job.queue_position,
     message: job.message,
   };
 }
@@ -176,8 +188,16 @@ export function getIndexJob(jobId: string): IndexJobSnapshot | null {
 }
 
 export function findRunningIndexJob(slug: string, scopePath: string): IndexJobSnapshot | null {
+  return findActiveIndexJob(slug, scopePath);
+}
+
+export function findActiveIndexJob(slug: string, scopePath: string): IndexJobSnapshot | null {
   for (const job of jobs.values()) {
-    if (job.slug === slug && job.scope_path === scopePath && job.status === "running") {
+    if (
+      job.slug === slug &&
+      job.scope_path === scopePath &&
+      (job.status === "running" || job.status === "queued")
+    ) {
       return snapshot(job);
     }
   }
@@ -185,8 +205,8 @@ export function findRunningIndexJob(slug: string, scopePath: string): IndexJobSn
 }
 
 export function createIndexJob(slug: string, scopePath: string): IndexJob {
-  const running = findRunningIndexJob(slug, scopePath);
-  if (running) {
+  const active = findActiveIndexJob(slug, scopePath);
+  if (active) {
     throw new Error("index_job_running");
   }
 
@@ -194,7 +214,7 @@ export function createIndexJob(slug: string, scopePath: string): IndexJob {
     job_id: randomUUID(),
     slug,
     scope_path: scopePath,
-    status: "running",
+    status: "queued",
     phase: "scanning",
     total: 0,
     processed: 0,
@@ -204,7 +224,8 @@ export function createIndexJob(slug: string, scopePath: string): IndexJob {
     current_file: null,
     elapsed_seconds: 0,
     eta_seconds: null,
-    message: "Поиск файлов…",
+    queue_position: null,
+    message: "В очереди…",
     started_at_ms: Date.now(),
     file_started_at_ms: null,
   };
@@ -212,6 +233,43 @@ export function createIndexJob(slug: string, scopePath: string): IndexJob {
   jobs.set(job.job_id, job);
   pruneJobs();
   return job;
+}
+
+export function setIndexJobQueuePositions(positions: Map<string, number>): void {
+  for (const job of jobs.values()) {
+    if (job.status !== "queued") continue;
+    const position = positions.get(job.job_id) ?? null;
+    touchJob(job, {
+      queue_position: position,
+      message:
+        position === null
+          ? "В очереди…"
+          : position <= 1
+            ? "Скоро начнётся…"
+            : `В очереди: ${position}`,
+    });
+  }
+}
+
+export function activateIndexJob(jobId: string): void {
+  const job = jobs.get(jobId);
+  if (!job || job.status !== "queued") return;
+  touchJob(job, {
+    status: "running",
+    queue_position: null,
+    phase: "scanning",
+    message: "Поиск файлов…",
+    started_at_ms: Date.now(),
+    file_started_at_ms: null,
+    processed: 0,
+    updated: 0,
+    failed: 0,
+    total: 0,
+    percent: 0,
+    current_file: null,
+    elapsed_seconds: 0,
+    eta_seconds: null,
+  });
 }
 
 export function updateIndexJobScanComplete(jobId: string, total: number): void {
@@ -280,6 +338,7 @@ export function failIndexJob(jobId: string, message: string): void {
 /** @internal tests */
 export function _resetIndexJobsForTests(): void {
   jobs.clear();
+  _resetIndexJobQueueForTests();
 }
 
 export function _getJobKey(slug: string, scopePath: string): string {

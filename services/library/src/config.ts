@@ -26,6 +26,7 @@ const envSchema = z.object({
   LIBRARY_MAX_FILE_MB: z.coerce.number().int().positive().default(50),
   LIBRARY_OCR_MAX_PAGES: z.coerce.number().int().positive().default(150),
   LIBRARY_OCR_TIMEOUT_SEC: z.coerce.number().int().positive().default(900),
+  LIBRARY_INDEX_MAX_CONCURRENT: z.coerce.number().int().positive().default(3),
   DEEPSEEK_API_KEY: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().min(8).optional(),

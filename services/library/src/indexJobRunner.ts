@@ -7,6 +7,7 @@ import {
   updateIndexJobFileStart,
   updateIndexJobScanComplete,
 } from "./indexJobs.js";
+import { scheduleIndexJob } from "./indexJobQueue.js";
 import { indexFileText, listIndexableFiles, reindexSingleFile } from "./storage.js";
 
 /** Scope job key: one file — путь файла; несколько — уникальный batch (не блокирует папку). */
@@ -17,7 +18,7 @@ export function indexJobScopeForFiles(scopePath: string, filePaths: string[]): s
 
 export function startFolderReindexJob(root: string, slug: string, relPath: string): string {
   const job = createIndexJob(slug, relPath);
-  void runFolderReindexJob(root, slug, relPath, job.job_id);
+  scheduleIndexJob(job.job_id, () => runFolderReindexJob(root, slug, relPath, job.job_id));
   return job.job_id;
 }
 
@@ -30,7 +31,7 @@ export function startFilesIndexJob(
 ): string {
   const jobScope = indexJobScopeForFiles(scopePath, filePaths);
   const job = createIndexJob(slug, jobScope);
-  void runFilesIndexJob(root, slug, job.job_id, filePaths, force);
+  scheduleIndexJob(job.job_id, () => runFilesIndexJob(root, slug, job.job_id, filePaths, force));
   return job.job_id;
 }
 

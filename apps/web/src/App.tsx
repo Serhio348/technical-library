@@ -199,7 +199,7 @@ export function App(): React.ReactElement {
   }, [view, activeSlug, currentPath, reloadTree]);
 
   useEffect(() => {
-    if (!indexJob || indexJob.status !== "running" || !activeSlug) return;
+    if (!indexJob || (indexJob.status !== "running" && indexJob.status !== "queued") || !activeSlug) return;
     const jobId = indexJob.job_id;
     const timer = window.setInterval(() => {
       void fetchIndexJobStatus(activeSlug, jobId)
@@ -572,10 +572,11 @@ function DirectionView({
   onToggleChat: () => void;
 }): React.ReactElement {
   const folderIndexRunning =
-    indexJob?.status === "running" && indexJob.scope_path === currentPath;
+    (indexJob?.status === "running" || indexJob?.status === "queued") &&
+    indexJob.scope_path === currentPath;
 
   const isFileIndexing = (filePath: string): boolean =>
-    indexJob?.status === "running" &&
+    (indexJob?.status === "running" || indexJob?.status === "queued") &&
     (indexJob.scope_path === filePath || indexJob.current_file === filePath);
   const hue = dirHue;
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;

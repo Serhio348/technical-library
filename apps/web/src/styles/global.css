@@ -924,6 +924,10 @@ code {
   color: hsl(var(--dir-hue, 38) 80% 70%);
 }
 
+.tl-index-panel__status--queued {
+  color: hsl(210 70% 72%);
+}
+
 .tl-index-panel__status--done {
   color: #6ee7b7;
 }
