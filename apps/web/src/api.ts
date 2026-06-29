@@ -220,11 +220,29 @@ export function formatDate(iso: string): string {
   return d.toLocaleDateString("ru-RU");
 }
 
-export function directionHue(slug: string): number {
-  const palette = [32, 168, 210, 278, 12, 145, 95];
+export const DIRECTION_HUE_PALETTE = [32, 168, 210, 278, 12, 145, 95, 48, 320, 185, 220, 55] as const;
+
+/** Уникальный оттенок для каждого направления на главной (без повторов в палитре). */
+export function assignDirectionHues(slugs: string[]): Record<string, number> {
+  const unique = [...new Set(slugs)].sort((a, b) => a.localeCompare(b, "ru"));
+  const out: Record<string, number> = {};
+  unique.forEach((slug, index) => {
+    if (index < DIRECTION_HUE_PALETTE.length) {
+      out[slug] = DIRECTION_HUE_PALETTE[index]!;
+    } else {
+      out[slug] = (index * 137) % 360;
+    }
+  });
+  return out;
+}
+
+export function directionHue(slug: string, allSlugs?: string[]): number {
+  if (allSlugs && allSlugs.length > 0) {
+    return assignDirectionHues(allSlugs)[slug] ?? DIRECTION_HUE_PALETTE[0]!;
+  }
   let sum = 0;
   for (let i = 0; i < slug.length; i += 1) sum += slug.charCodeAt(i);
-  return palette[sum % palette.length] ?? 32;
+  return DIRECTION_HUE_PALETTE[sum % DIRECTION_HUE_PALETTE.length] ?? DIRECTION_HUE_PALETTE[0]!;
 }
 
 export function errorMessage(code: string): string {

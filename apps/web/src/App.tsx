@@ -1,9 +1,9 @@
 import {
+  ArrowLeft,
   BookOpen,
   ChevronRight,
   FolderOpen,
   FolderPlus,
-  Layers,
   MessageSquare,
   MoreHorizontal,
   Plus,
@@ -12,11 +12,12 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IndexProgressPanel } from "./components/IndexProgressPanel";
 import { ChatPanel } from "./components/ChatPanel";
 import { DocumentSearch } from "./components/DocumentSearch";
 import {
+  assignDirectionHues,
   createDirection,
   createFolder,
   deleteFile,
@@ -38,6 +39,7 @@ import {
 import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
 import { DOC_TYPE_OPTIONS } from "./types";
 import { ensureUniqueSlug } from "./slugify";
+import { buildAppHash, homeAppHash, parseAppHash } from "./appRoute";
 
 type View = "home" | "direction";
 
@@ -59,8 +61,13 @@ export function App(): React.ReactElement {
   const [chatOpen, setChatOpen] = useState(false);
   const [indexJob, setIndexJob] = useState<IndexJob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const skipHashSyncRef = useRef(false);
 
   const activeDirection = directions.find((d) => d.slug === activeSlug);
+  const directionHues = useMemo(
+    () => assignDirectionHues(directions.map((d) => d.slug)),
+    [directions],
+  );
 
   const reloadDirections = useCallback(async () => {
     const data = await fetchDirections();
@@ -76,6 +83,54 @@ export function App(): React.ReactElement {
     setCurrentPath(data.path ?? path);
   }, []);
 
+  const syncRouteToHash = useCallback((nextView: View, slug: string, path: string): void => {
+    const target = nextView === "home" ? homeAppHash() : buildAppHash(slug, path);
+    if (window.location.hash !== target) {
+      window.history.pushState(null, "", target);
+    }
+  }, []);
+
+  const applyRoute = useCallback((route: ReturnType<typeof parseAppHash>): void => {
+    if (route.view === "home") {
+      setView("home");
+      setTree(null);
+      setCurrentPath("");
+      setChatOpen(false);
+      setError(null);
+      return;
+    }
+    setActiveSlug(route.slug);
+    setCurrentPath(route.path);
+    setView("direction");
+    setChatOpen(false);
+    setError(null);
+  }, []);
+
+  const goHome = useCallback((): void => {
+    applyRoute({ view: "home" });
+    syncRouteToHash("home", "", "");
+  }, [applyRoute, syncRouteToHash]);
+
+  const openDirection = useCallback(
+    (slug: string, path = ""): void => {
+      setActiveSlug(slug);
+      setCurrentPath(path);
+      setView("direction");
+      setChatOpen(false);
+      setError(null);
+      syncRouteToHash("direction", slug, path);
+    },
+    [syncRouteToHash],
+  );
+
+  const navigateFolder = useCallback(
+    (path: string): void => {
+      setCurrentPath(path);
+      if (activeSlug) syncRouteToHash("direction", activeSlug, path);
+    },
+    [activeSlug, syncRouteToHash],
+  );
+
   useEffect(() => {
     void (async () => {
       try {
@@ -90,6 +145,48 @@ export function App(): React.ReactElement {
       }
     })();
   }, [reloadDirections]);
+
+  useEffect(() => {
+    if (loading) return;
+    const route = parseAppHash();
+    if (route.view === "direction") {
+      const exists = directions.some((d) => d.slug === route.slug);
+      skipHashSyncRef.current = true;
+      if (exists) {
+        applyRoute(route);
+      } else {
+        applyRoute({ view: "home" });
+        window.history.replaceState(null, "", homeAppHash());
+      }
+    }
+  }, [loading, directions, applyRoute]);
+
+  useEffect(() => {
+    const onPopState = (): void => {
+      skipHashSyncRef.current = true;
+      applyRoute(parseAppHash());
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [applyRoute]);
+
+  useEffect(() => {
+    if (skipHashSyncRef.current) {
+      skipHashSyncRef.current = false;
+      return;
+    }
+    if (view === "home") {
+      if (window.location.hash && window.location.hash !== homeAppHash()) {
+        window.history.replaceState(null, "", homeAppHash());
+      }
+      return;
+    }
+    if (!activeSlug) return;
+    const target = buildAppHash(activeSlug, currentPath);
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, "", target);
+    }
+  }, [view, activeSlug, currentPath]);
 
   useEffect(() => {
     if (view !== "direction" || !activeSlug) return;
@@ -126,20 +223,6 @@ export function App(): React.ReactElement {
   const trackIndexJob = useCallback(async (job: IndexJob) => {
     setIndexJob(job);
   }, []);
-
-  const openDirection = (slug: string): void => {
-    setActiveSlug(slug);
-    setCurrentPath("");
-    setView("direction");
-    setError(null);
-  };
-
-  const goHome = (): void => {
-    setView("home");
-    setTree(null);
-    setCurrentPath("");
-    setError(null);
-  };
 
   const handleCreateDirection = async (): Promise<void> => {
     const title = createTitle.trim();
@@ -232,7 +315,7 @@ export function App(): React.ReactElement {
   return (
     <div className="tl-app">
       <header className="tl-header">
-        <div className="tl-header__brand">
+        <button type="button" className="tl-header__brand" onClick={goHome} title="На главную — все направления">
           <div className="tl-header__logo">
             <BookOpen size={22} strokeWidth={1.75} />
           </div>
@@ -240,11 +323,11 @@ export function App(): React.ReactElement {
             <p className="tl-header__kicker">Technical Library</p>
             <h1 className="tl-header__title">Нормативная библиотека</h1>
           </div>
-        </div>
+        </button>
         <div className="tl-header__actions">
           {view === "direction" ? (
             <button type="button" className="tl-btn tl-btn--ghost" onClick={goHome}>
-              <Layers size={16} />
+              <ArrowLeft size={16} />
               Все направления
             </button>
           ) : (
@@ -262,12 +345,14 @@ export function App(): React.ReactElement {
         ) : view === "home" ? (
           <HomeView
             directions={directions}
+            directionHues={directionHues}
             onOpen={openDirection}
             onCreate={() => setShowCreate(true)}
           />
         ) : activeDirection && tree ? (
           <DirectionView
             direction={activeDirection}
+            directionHue={directionHues[activeDirection.slug] ?? directionHue(activeDirection.slug)}
             tree={tree}
             currentPath={currentPath}
             pathParts={pathParts}
@@ -276,7 +361,8 @@ export function App(): React.ReactElement {
             busy={busy}
             maxFileMb={maxFileMb}
             fileInputRef={fileInputRef}
-            onNavigate={setCurrentPath}
+            onNavigate={navigateFolder}
+            onGoHome={goHome}
             onNewFolderChange={setNewFolder}
             onUploadDocTypeChange={setUploadDocType}
             onCreateFolder={() => void handleCreateFolder()}
@@ -374,10 +460,12 @@ export function App(): React.ReactElement {
 
 function HomeView({
   directions,
+  directionHues,
   onOpen,
   onCreate,
 }: {
   directions: Direction[];
+  directionHues: Record<string, number>;
   onOpen: (slug: string) => void;
   onCreate: () => void;
 }): React.ReactElement {
@@ -407,7 +495,7 @@ function HomeView({
       </div>
       <div className="tl-direction-grid">
         {directions.map((dir) => {
-          const hue = directionHue(dir.slug);
+          const hue = directionHues[dir.slug] ?? directionHue(dir.slug);
           return (
             <button
               key={dir.slug}
@@ -434,6 +522,7 @@ function HomeView({
 
 function DirectionView({
   direction,
+  directionHue: dirHue,
   tree,
   currentPath,
   pathParts,
@@ -443,6 +532,7 @@ function DirectionView({
   maxFileMb,
   fileInputRef,
   onNavigate,
+  onGoHome,
   onNewFolderChange,
   onUploadDocTypeChange,
   onCreateFolder,
@@ -457,6 +547,7 @@ function DirectionView({
   onToggleChat,
 }: {
   direction: Direction;
+  directionHue: number;
   tree: LibraryTree;
   currentPath: string;
   pathParts: string[];
@@ -466,6 +557,7 @@ function DirectionView({
   maxFileMb: number;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onNavigate: (path: string) => void;
+  onGoHome: () => void;
   onNewFolderChange: (v: string) => void;
   onUploadDocTypeChange: (v: DocumentType | "") => void;
   onCreateFolder: () => void;
@@ -485,7 +577,7 @@ function DirectionView({
   const isFileIndexing = (filePath: string): boolean =>
     indexJob?.status === "running" &&
     (indexJob.scope_path === filePath || indexJob.current_file === filePath);
-  const hue = directionHue(direction.slug);
+  const hue = dirHue;
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -506,6 +598,10 @@ function DirectionView({
           <h2>{direction.title}</h2>
         </div>
         <nav className="tl-sidebar__nav">
+          <button type="button" className="tl-nav-item tl-nav-item--back" onClick={onGoHome}>
+            <ArrowLeft size={16} />
+            Все направления
+          </button>
           <button
             type="button"
             className={`tl-nav-item${currentPath === "" ? " tl-nav-item--active" : ""}`}
@@ -544,9 +640,15 @@ function DirectionView({
       <section className="tl-content">
         <div className="tl-content__toolbar">
           <nav className="tl-breadcrumb">
-            <button type="button" onClick={() => onNavigate("")}>
-              {direction.title}
+            <button type="button" className="tl-breadcrumb__home" onClick={onGoHome} title="Все направления">
+              Направления
             </button>
+            <span className="tl-breadcrumb__segment">
+              <ChevronRight size={14} />
+              <button type="button" onClick={() => onNavigate("")}>
+                {direction.title}
+              </button>
+            </span>
             {pathParts.map((part, idx) => {
               const path = pathParts.slice(0, idx + 1).join("/");
               return (

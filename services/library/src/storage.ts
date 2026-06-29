@@ -398,21 +398,48 @@ async function writeExtractedSidecar(
   }
 }
 
+async function unlinkIfExists(absPath: string): Promise<void> {
+  try {
+    await unlink(absPath);
+  } catch {
+    // sidecar missing
+  }
+}
+
+async function unlinkSidecarRel(
+  root: string,
+  slug: string,
+  relPath: string,
+): Promise<void> {
+  await unlinkIfExists(resolveLegacyUnderRoot(root, slug, relPath));
+  try {
+    await unlinkIfExists(resolveUnderRoot(root, slug, relPath));
+  } catch {
+    // strict resolver rejected legacy filename
+  }
+}
+
+const FILE_INDEX_SIDECAR_SUFFIXES = [
+  ".extracted.txt",
+  ".extracted.meta.json",
+  ".extracted.pages.json",
+  ".library.json",
+] as const;
+
+/** Удаляет все sidecar-файлы индексации и каталога для документа. */
+export async function removeFileIndexSidecars(
+  root: string,
+  slug: string,
+  relFile: string,
+): Promise<void> {
+  for (const suffix of FILE_INDEX_SIDECAR_SUFFIXES) {
+    await unlinkSidecarRel(root, slug, `${relFile}${suffix}`);
+  }
+}
+
 async function removeExtractedSidecar(root: string, slug: string, rel: string): Promise<void> {
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${rel}.extracted.txt`));
-  } catch {
-    // no extracted sidecar
-  }
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${rel}.extracted.meta.json`));
-  } catch {
-    // no extracted meta sidecar
-  }
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${rel}.extracted.pages.json`));
-  } catch {
-    // no extracted pages sidecar
+  for (const suffix of [".extracted.txt", ".extracted.meta.json", ".extracted.pages.json"] as const) {
+    await unlinkSidecarRel(root, slug, `${rel}${suffix}`);
   }
 }
 
@@ -496,21 +523,7 @@ export function resolveFilePath(root: string, slug: string, relFile: string): st
 export async function deleteFile(root: string, slug: string, relFile: string): Promise<void> {
   const abs = resolveFilePath(root, slug, relFile);
   await unlink(abs);
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${relFile}.extracted.txt`));
-  } catch {
-    // no extracted sidecar
-  }
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${relFile}.extracted.meta.json`));
-  } catch {
-    // no extracted meta sidecar
-  }
-  try {
-    await unlink(resolveLegacyUnderRoot(root, slug, `${relFile}.extracted.pages.json`));
-  } catch {
-    // no extracted pages sidecar
-  }
+  await removeFileIndexSidecars(root, slug, relFile);
 }
 
 export async function readExtractedText(

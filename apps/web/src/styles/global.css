@@ -76,6 +76,23 @@ code {
   display: flex;
   align-items: center;
   gap: 0.85rem;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  border-radius: 10px;
+  transition: opacity 0.15s ease;
+}
+
+.tl-header__brand:hover {
+  opacity: 0.92;
+}
+
+.tl-header__brand:focus-visible {
+  outline: 2px solid hsl(38 75% 52% / 0.65);
+  outline-offset: 3px;
 }
 
 .tl-header__logo {
@@ -338,6 +355,18 @@ code {
   color: hsl(var(--dir-hue) 85% 78%);
 }
 
+.tl-nav-item--back {
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.tl-nav-item--back:hover {
+  color: hsl(var(--dir-hue) 85% 78%);
+}
+
 .tl-sidebar__newfolder {
   display: flex;
   gap: 0.35rem;
@@ -392,6 +421,10 @@ code {
 
 .tl-breadcrumb button:hover {
   color: var(--accent);
+}
+
+.tl-breadcrumb__home {
+  font-weight: 500;
 }
 
 .tl-breadcrumb__segment {
