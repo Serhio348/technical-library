@@ -182,6 +182,47 @@ function touchJob(job: IndexJob, patch: Partial<IndexJob>): void {
   Object.assign(job, patch);
 }
 
+/** Проверяет, относится ли задача к папке path (включая batch-загрузки и файлы внутри). */
+export function indexJobMatchesScope(scopePath: string, path: string): boolean {
+  if (!path) {
+    return (
+      !scopePath.includes("/") ||
+      scopePath.includes("@batch") ||
+      scopePath.split("/").length === 1
+    );
+  }
+  if (scopePath === path) return true;
+  if (scopePath.startsWith(`${path}@batch`)) return true;
+  if (scopePath.startsWith(`${path}/`)) return true;
+  if (!scopePath.includes("@batch") && path.startsWith(`${scopePath}/`)) return true;
+  return false;
+}
+
+export function indexJobMatchesView(job: IndexJobSnapshot, path: string): boolean {
+  if (job.current_file) {
+    if (!path) return true;
+    return job.current_file === path || job.current_file.startsWith(`${path}/`);
+  }
+  return indexJobMatchesScope(job.scope_path, path);
+}
+
+export function listActiveIndexJobs(slug: string, path = ""): IndexJobSnapshot[] {
+  const items: IndexJobSnapshot[] = [];
+  for (const job of jobs.values()) {
+    if (job.slug !== slug) continue;
+    if (job.status !== "running" && job.status !== "queued") continue;
+    if (path && !indexJobMatchesView(snapshot(job), path)) continue;
+    items.push(snapshot(job));
+  }
+  items.sort((a, b) => {
+    const aq = a.queue_position ?? 999;
+    const bq = b.queue_position ?? 999;
+    if (aq !== bq) return aq - bq;
+    return a.job_id.localeCompare(b.job_id);
+  });
+  return items;
+}
+
 export function getIndexJob(jobId: string): IndexJobSnapshot | null {
   const job = jobs.get(jobId);
   return job ? snapshot(job) : null;

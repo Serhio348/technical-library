@@ -13,9 +13,7 @@ function indexHintForFile(filePath: string | null, percent: number): string | nu
   return null;
 }
 
-export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.ReactElement | null {
-  if (!job) return null;
-
+function IndexProgressItem({ job }: { job: IndexJob }): React.ReactElement {
   const queued = job.status === "queued";
   const running = job.status === "running";
 
@@ -84,6 +82,18 @@ export function IndexProgressPanel({ job }: { job: IndexJob | null }): React.Rea
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+export function IndexProgressPanel({ jobs }: { jobs: IndexJob[] }): React.ReactElement | null {
+  if (jobs.length === 0) return null;
+
+  return (
+    <div className="tl-index-panel-stack">
+      {jobs.map((job) => (
+        <IndexProgressItem key={job.job_id} job={job} />
+      ))}
     </div>
   );
 }

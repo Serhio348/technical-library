@@ -745,6 +745,18 @@ code {
   margin-top: 0.5rem;
 }
 
+.tl-index-panel-stack {
+  border-bottom: 1px solid var(--border);
+}
+
+.tl-index-panel-stack .tl-index-panel {
+  border-bottom: none;
+}
+
+.tl-index-panel-stack .tl-index-panel + .tl-index-panel {
+  border-top: 1px solid var(--border);
+}
+
 .tl-index-panel {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);

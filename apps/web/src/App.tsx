@@ -24,7 +24,7 @@ import {
   deleteFolder,
   directionHue,
   errorMessage,
-  fetchActiveIndexJob,
+  fetchAllActiveIndexJobs,
   fetchDirections,
   fetchHealth,
   fetchIndexJobStatus,
@@ -40,6 +40,14 @@ import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
 import { DOC_TYPE_OPTIONS } from "./types";
 import { ensureUniqueSlug } from "./slugify";
 import { buildAppHash, homeAppHash, parseAppHash } from "./appRoute";
+import {
+  indexJobIsActive,
+  indexJobMatchesView,
+  jobAffectsFile,
+  mergeIndexJob,
+  mergeIndexJobs,
+} from "./indexJobUtils";
+import { loadPersistedIndexJobRefs, savePersistedIndexJobRefs } from "./indexJobPersistence";
 
 type View = "home" | "direction";
 
@@ -59,10 +67,37 @@ export function App(): React.ReactElement {
   const [maxFileMb, setMaxFileMb] = useState(200);
   const [llmConfigured, setLlmConfigured] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [indexJob, setIndexJob] = useState<IndexJob | null>(null);
+  const [indexJobs, setIndexJobs] = useState<IndexJob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const skipHashSyncRef = useRef(false);
 
+  const visibleIndexJobs = useMemo(
+    () =>
+      indexJobs.filter(
+        (job) => job.slug === activeSlug && indexJobMatchesView(job, currentPath),
+      ),
+    [indexJobs, activeSlug, currentPath],
+  );
+
+  const activePollKey = useMemo(
+    () =>
+      indexJobs
+        .filter(indexJobIsActive)
+        .map((job) => `${job.slug}:${job.job_id}`)
+        .sort()
+        .join("|"),
+    [indexJobs],
+  );
+
+  const finishedPollKey = useMemo(
+    () =>
+      indexJobs
+        .filter((job) => job.status === "done" || job.status === "failed")
+        .map((job) => job.job_id)
+        .sort()
+        .join("|"),
+    [indexJobs],
+  );
   const activeDirection = directions.find((d) => d.slug === activeSlug);
   const directionHues = useMemo(
     () => assignDirectionHues(directions.map((d) => d.slug)),
@@ -191,37 +226,84 @@ export function App(): React.ReactElement {
   useEffect(() => {
     if (view !== "direction" || !activeSlug) return;
     void reloadTree(activeSlug, currentPath).catch(() => setError("Не удалось загрузить папку."));
-    void fetchActiveIndexJob(activeSlug, currentPath)
-      .then((job) => {
-        if (job) setIndexJob(job);
-      })
-      .catch(() => undefined);
   }, [view, activeSlug, currentPath, reloadTree]);
 
+  const restoreIndexJobs = useCallback(async (slug: string): Promise<void> => {
+    const persisted = loadPersistedIndexJobRefs().filter((ref) => ref.slug === slug);
+    let restored: IndexJob[] = [];
+    if (persisted.length > 0) {
+      const results = await Promise.all(
+        persisted.map((ref) => fetchIndexJobStatus(ref.slug, ref.job_id).catch(() => null)),
+      );
+      restored = results.filter(Boolean) as IndexJob[];
+    }
+
+    const active = await fetchAllActiveIndexJobs(slug);
+    setIndexJobs((prev) => {
+      const merged = mergeIndexJobs(mergeIndexJobs(prev, restored), active);
+      savePersistedIndexJobRefs(merged);
+      return merged;
+    });
+  }, []);
+
   useEffect(() => {
-    if (!indexJob || (indexJob.status !== "running" && indexJob.status !== "queued") || !activeSlug) return;
-    const jobId = indexJob.job_id;
+    const route = parseAppHash();
+    if (route.view !== "direction") return;
+    void restoreIndexJobs(route.slug).catch(() => undefined);
+  }, [restoreIndexJobs]);
+
+  useEffect(() => {
+    if (view !== "direction" || !activeSlug) return;
+    void restoreIndexJobs(activeSlug).catch(() => undefined);
+  }, [view, activeSlug, restoreIndexJobs]);
+
+  useEffect(() => {
+    savePersistedIndexJobRefs(indexJobs);
+  }, [indexJobs]);
+
+  useEffect(() => {
+    if (!activePollKey) return;
     const timer = window.setInterval(() => {
-      void fetchIndexJobStatus(activeSlug, jobId)
-        .then((job) => {
-          setIndexJob(job);
-          if (job.status !== "running") {
-            void reloadTree(activeSlug, currentPath).catch(() => undefined);
-          }
-        })
-        .catch(() => undefined);
+      const active = activePollKey.split("|").filter(Boolean).map((key) => {
+        const sep = key.indexOf(":");
+        return { slug: key.slice(0, sep), jobId: key.slice(sep + 1) };
+      });
+      void Promise.all(
+        active.map(({ slug, jobId }) => fetchIndexJobStatus(slug, jobId).catch(() => null)),
+      ).then((updates) => {
+        const valid = updates.filter(Boolean) as IndexJob[];
+        if (valid.length === 0) return;
+        setIndexJobs((current) => mergeIndexJobs(current, valid));
+        if (
+          view === "direction" &&
+          activeSlug &&
+          valid.some((job) => job.slug === activeSlug && !indexJobIsActive(job))
+        ) {
+          void reloadTree(activeSlug, currentPath).catch(() => undefined);
+        }
+      });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [indexJob?.job_id, indexJob?.status, activeSlug, currentPath, reloadTree]);
+  }, [activePollKey, view, activeSlug, currentPath, reloadTree]);
 
   useEffect(() => {
-    if (!indexJob || (indexJob.status !== "done" && indexJob.status !== "failed")) return;
-    const timer = window.setTimeout(() => setIndexJob(null), 8000);
+    if (!finishedPollKey) return;
+    const timer = window.setTimeout(
+      () =>
+        setIndexJobs((prev) =>
+          prev.filter((job) => job.status !== "done" && job.status !== "failed"),
+        ),
+      8000,
+    );
     return () => window.clearTimeout(timer);
-  }, [indexJob?.job_id, indexJob?.status]);
+  }, [finishedPollKey]);
 
-  const trackIndexJob = useCallback(async (job: IndexJob) => {
-    setIndexJob(job);
+  const trackIndexJob = useCallback((job: IndexJob) => {
+    setIndexJobs((prev) => {
+      const next = mergeIndexJob(prev, job);
+      savePersistedIndexJobRefs(next);
+      return next;
+    });
   }, []);
 
   const handleCreateDirection = async (): Promise<void> => {
@@ -391,7 +473,7 @@ export function App(): React.ReactElement {
                 setBusy(false);
               }
             }}
-            indexJob={indexJob}
+            indexJobs={visibleIndexJobs}
             onReindexFolder={() => void handleReindexFolder()}
             onReindexFile={(path) => void handleReindexFile(path)}
             llmConfigured={llmConfigured}
@@ -539,7 +621,7 @@ function DirectionView({
   onUpload,
   onDeleteFolder,
   onDeleteFile,
-  indexJob,
+  indexJobs,
   onReindexFolder,
   onReindexFile,
   llmConfigured,
@@ -564,20 +646,19 @@ function DirectionView({
   onUpload: (files: FileList | File[]) => void;
   onDeleteFolder: (path: string, name: string) => void;
   onDeleteFile: (path: string) => void;
-  indexJob: IndexJob | null;
+  indexJobs: IndexJob[];
   onReindexFolder: () => void;
   onReindexFile: (path: string) => void;
   llmConfigured: boolean;
   chatOpen: boolean;
   onToggleChat: () => void;
 }): React.ReactElement {
-  const folderIndexRunning =
-    (indexJob?.status === "running" || indexJob?.status === "queued") &&
-    indexJob.scope_path === currentPath;
+  const folderIndexRunning = indexJobs.some(
+    (job) => indexJobIsActive(job) && job.scope_path === currentPath && !job.scope_path.includes("@batch"),
+  );
 
   const isFileIndexing = (filePath: string): boolean =>
-    (indexJob?.status === "running" || indexJob?.status === "queued") &&
-    (indexJob.scope_path === filePath || indexJob.current_file === filePath);
+    indexJobs.some((job) => jobAffectsFile(job, filePath));
   const hue = dirHue;
   const isEmpty = tree.folders.length === 0 && tree.files.length === 0;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -738,7 +819,7 @@ function DirectionView({
 
         <DocumentSearch slug={direction.slug} scopePath={currentPath} />
 
-        <IndexProgressPanel job={indexJob} />
+        <IndexProgressPanel jobs={indexJobs} />
 
         {isEmpty ? (
           <div className="tl-empty">

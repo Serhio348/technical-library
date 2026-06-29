@@ -6,7 +6,7 @@ import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
 import { ensureUniqueSlug } from "./slugify.js";
-import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
+import { getIndexJob, listActiveIndexJobs } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
 import {
@@ -476,7 +476,11 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       res.status(400).json({ error: "invalid_params" });
       return;
     }
-    const job = jobId ? getIndexJob(jobId) : findRunningIndexJob(slug, pathParam);
+    if (req.query.list === "1") {
+      res.json({ items: listActiveIndexJobs(slug, pathParam) });
+      return;
+    }
+    const job = jobId ? getIndexJob(jobId) : listActiveIndexJobs(slug, pathParam)[0] ?? null;
     if (!job || job.slug !== slug) {
       res.status(404).json({ error: "job_not_found" });
       return;

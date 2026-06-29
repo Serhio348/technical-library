@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeEtaSeconds, computePercent, inFileProgressWeight } from "./indexJobs.js";
+import {
+  computeEtaSeconds,
+  computePercent,
+  inFileProgressWeight,
+  indexJobMatchesScope,
+  indexJobMatchesView,
+} from "./indexJobs.js";
+import type { IndexJobSnapshot } from "./indexJobs.js";
 
 describe("computePercent", () => {
   it("returns 0 while scanning", () => {
@@ -52,5 +59,55 @@ describe("computeEtaSeconds", () => {
   it("returns null when done or empty", () => {
     expect(computeEtaSeconds(1000, 0, 0)).toBeNull();
     expect(computeEtaSeconds(1000, 5, 5)).toBe(0);
+  });
+});
+
+describe("indexJobMatchesScope", () => {
+  it("matches folder and batch upload scopes", () => {
+    expect(indexJobMatchesScope("tkp", "tkp")).toBe(true);
+    expect(indexJobMatchesScope("tkp@batch-abc", "tkp")).toBe(true);
+    expect(indexJobMatchesScope("tkp/docs", "tkp")).toBe(true);
+    expect(indexJobMatchesScope("other", "tkp")).toBe(false);
+  });
+
+  it("matches nested paths", () => {
+    expect(indexJobMatchesScope("tkp/docs", "tkp/docs")).toBe(true);
+    expect(indexJobMatchesScope("tkp/docs@batch-x", "tkp/docs")).toBe(true);
+    expect(indexJobMatchesScope("tkp/docs/file.pdf", "tkp/docs")).toBe(true);
+  });
+
+  it("matches parent folder reindex from child path", () => {
+    expect(indexJobMatchesScope("tkp", "tkp/docs")).toBe(true);
+    expect(indexJobMatchesScope("tkp@batch-x", "tkp/docs")).toBe(false);
+  });
+});
+
+describe("indexJobMatchesView", () => {
+  const base = (patch: Partial<IndexJobSnapshot>): IndexJobSnapshot => ({
+    job_id: "1",
+    slug: "gas",
+    scope_path: "tkp",
+    status: "running",
+    phase: "indexing",
+    total: 1,
+    processed: 0,
+    updated: 0,
+    failed: 0,
+    percent: 0,
+    current_file: null,
+    elapsed_seconds: 0,
+    eta_seconds: null,
+    queue_position: null,
+    message: "",
+    ...patch,
+  });
+
+  it("uses current_file for batch uploads", () => {
+    expect(
+      indexJobMatchesView(base({ scope_path: "tkp@batch-1", current_file: "tkp/a.pdf" }), "tkp"),
+    ).toBe(true);
+    expect(
+      indexJobMatchesView(base({ scope_path: "tkp@batch-1", current_file: "other/a.pdf" }), "tkp"),
+    ).toBe(false);
   });
 });

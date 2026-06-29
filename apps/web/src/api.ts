@@ -157,15 +157,26 @@ export async function fetchIndexJobStatus(slug: string, jobId: string): Promise<
   return data.job;
 }
 
-export async function fetchActiveIndexJob(slug: string, path: string): Promise<IndexJob | null> {
+export async function fetchActiveIndexJobs(slug: string, path = ""): Promise<IndexJob[]> {
   try {
-    const data = await api<{ job: IndexJob }>(
-      `/api/library/directions/${encodeURIComponent(slug)}/reindex/status?path=${encodeURIComponent(path)}`,
+    const params = new URLSearchParams({ list: "1" });
+    if (path) params.set("path", path);
+    const data = await api<{ items: IndexJob[] }>(
+      `/api/library/directions/${encodeURIComponent(slug)}/reindex/status?${params}`,
     );
-    return data.job;
+    return data.items ?? [];
   } catch {
-    return null;
+    return [];
   }
+}
+
+export async function fetchAllActiveIndexJobs(slug: string): Promise<IndexJob[]> {
+  return fetchActiveIndexJobs(slug, "");
+}
+
+export async function fetchActiveIndexJob(slug: string, path: string): Promise<IndexJob | null> {
+  const items = await fetchActiveIndexJobs(slug, path);
+  return items[0] ?? null;
 }
 
 export function formatDuration(seconds: number | null): string {
