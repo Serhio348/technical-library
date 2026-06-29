@@ -1,7 +1,12 @@
 import { buildLibraryContextForQuery, type LibraryContextItem } from "./storage.js";
 import { chatCompletion, type ChatMessage } from "./deepseek.js";
 import { isDeepSeekConfigured } from "./config.js";
-import { extractTextFromImageBuffer, isPhotoOcrUsable } from "./imageOcr.js";
+import {
+  type AskAttachment,
+  attachmentKindLabel,
+  extractTextFromAskAttachment,
+  isAskAttachmentTextUsable,
+} from "./attachmentExtract.js";
 
 export type AskHistoryItem = {
   role: "user" | "assistant";
@@ -22,6 +27,7 @@ export type AskResult = {
   mode: AskMode;
   resolved_question: string;
   recognized_question?: string;
+  attachment_filename?: string;
 };
 
 const MCQ_INSTRUCTIONS = `Если в вопросе есть варианты ответа — нумерованный или буквенный список (1), 2), 3), а), б), в) и т.п.), в том числе если текст пришёл с фото после OCR:
@@ -134,29 +140,36 @@ export async function answerLibraryQuestion(
   scopePath = "",
   history: unknown = [],
   mode: AskMode = "preview",
-  imageBuffer?: Buffer | null,
+  attachment?: AskAttachment | null,
 ): Promise<AskResult> {
   if (!isDeepSeekConfigured()) {
     throw new Error("deepseek_not_configured");
   }
 
-  let recognizedFromImage: string | null = null;
-  if (imageBuffer?.length) {
-    recognizedFromImage = await extractTextFromImageBuffer(imageBuffer);
-    if (!isPhotoOcrUsable(recognizedFromImage) && !question.trim()) {
-      throw new Error("ocr_no_text");
+  let extractedFromAttachment: string | null = null;
+  let attachmentFilename: string | undefined;
+  if (attachment?.buffer?.length) {
+    attachmentFilename = attachment.filename;
+    const raw = await extractTextFromAskAttachment(attachment.buffer, attachment.filename);
+    if (isAskAttachmentTextUsable(raw, attachment.filename)) {
+      extractedFromAttachment = raw;
+    } else if (!question.trim()) {
+      throw new Error("extract_no_text");
     }
   }
 
-  const q = [question.trim(), recognizedFromImage?.trim()].filter(Boolean).join("\n\n");
+  const q = [question.trim(), extractedFromAttachment?.trim()].filter(Boolean).join("\n\n");
   if (!q) throw new Error("empty_question");
 
   const items = await fetchContext(root, slug, q, scopePath, mode);
   const contextBlock = formatContext(items);
+  const attachmentNote = attachmentFilename
+    ? ` (из прикреплённого ${attachmentKindLabel(attachmentFilename)}${attachmentFilename ? `: ${attachmentFilename}` : ""})`
+    : "";
   const userContent =
     mode === "preview"
-      ? `Вопрос пользователя (может содержать варианты ответа, в т.ч. распознанные с фото):\n${q}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
-      : `Вопрос пользователя (может содержать варианты ответа, в т.ч. распознанные с фото):\n${q}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
+      ? `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
+      : `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: mode === "preview" ? PREVIEW_SYSTEM_PROMPT : FULL_SYSTEM_PROMPT },
@@ -172,6 +185,7 @@ export async function answerLibraryQuestion(
     context_available: items.length > 0,
     mode,
     resolved_question: q,
-    ...(recognizedFromImage ? { recognized_question: recognizedFromImage } : {}),
+    ...(extractedFromAttachment ? { recognized_question: extractedFromAttachment } : {}),
+    ...(attachmentFilename ? { attachment_filename: attachmentFilename } : {}),
   };
 }

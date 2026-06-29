@@ -9,6 +9,11 @@ import { ensureUniqueSlug } from "./slugify.js";
 import { findRunningIndexJob, getIndexJob } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
+import {
+  isAskAttachmentFilename,
+  isImageAttachmentFilename,
+  type AskAttachment,
+} from "./attachmentExtract.js";
 import { extractTextFromImageBuffer } from "./pdfExtract.js";
 import { isPhotoOcrUsable } from "./imageOcr.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
@@ -50,8 +55,24 @@ const photoOcrUpload = multer({
 
 const askUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
-});
+  limits: { fileSize: env.LIBRARY_MAX_FILE_MB * 1024 * 1024, files: 1 },
+}).fields([
+  { name: "image", maxCount: 1 },
+  { name: "document", maxCount: 1 },
+]);
+
+function pickAskUploadFile(
+  req: { file?: Express.Multer.File; files?: Record<string, Express.Multer.File[]> | Express.Multer.File[] },
+): Express.Multer.File | undefined {
+  const files = req.files;
+  if (files && !Array.isArray(files)) {
+    const image = files.image?.[0];
+    const document = files.document?.[0];
+    if (image && document) return undefined;
+    return document ?? image;
+  }
+  return req.file;
+}
 
 function parseCsvQuery(value: unknown): string[] {
   if (typeof value !== "string" || !value.trim()) return [];
@@ -354,7 +375,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
-  router.post(`${basePath}/:slug/ask`, askUpload.single("image"), async (req, res) => {
+  router.post(`${basePath}/:slug/ask`, askUpload, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const scopePath = typeof req.body?.scope_path === "string" ? req.body.scope_path.trim() : "";
@@ -370,16 +391,32 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       history = historyRaw;
     }
     const mode = req.body?.mode === "full" ? "full" : "preview";
-    const imageBuffer = req.file?.buffer ?? null;
-    if (!isValidSlug(slug) || (!message && !imageBuffer?.length) || !isValidRelativePath(scopePath)) {
+    const uploadFile = pickAskUploadFile(req);
+    if (uploadFile === undefined && req.files && !Array.isArray(req.files)) {
+      const hasBoth = Boolean(req.files.image?.[0] && req.files.document?.[0]);
+      if (hasBoth) {
+        res.status(400).json({ error: "invalid_params" });
+        return;
+      }
+    }
+    const attachment: AskAttachment | null = uploadFile
+      ? { buffer: uploadFile.buffer, filename: uploadFile.originalname || "attachment.bin" }
+      : null;
+    if (!isValidSlug(slug) || (!message && !attachment?.buffer?.length) || !isValidRelativePath(scopePath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
-    if (imageBuffer?.length) {
-      const mime = req.file?.mimetype?.toLowerCase() ?? "";
-      if (!mime.startsWith("image/")) {
-        res.status(400).json({ error: "invalid_image_type" });
+    if (attachment?.buffer?.length) {
+      if (!isAskAttachmentFilename(attachment.filename)) {
+        res.status(400).json({ error: "invalid_file_type" });
         return;
+      }
+      if (isImageAttachmentFilename(attachment.filename)) {
+        const mime = uploadFile?.mimetype?.toLowerCase() ?? "";
+        if (!mime.startsWith("image/")) {
+          res.status(400).json({ error: "invalid_image_type" });
+          return;
+        }
       }
     }
     try {
@@ -390,7 +427,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         scopePath,
         history,
         mode,
-        imageBuffer,
+        attachment,
       );
       res.json(result);
     } catch (e) {
@@ -399,8 +436,8 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         res.status(503).json({ error: "deepseek_not_configured" });
         return;
       }
-      if (msg === "ocr_no_text") {
-        res.status(422).json({ error: "ocr_no_text" });
+      if (msg === "extract_no_text" || msg === "ocr_no_text") {
+        res.status(422).json({ error: "extract_no_text" });
         return;
       }
       if (msg === "empty_question") {

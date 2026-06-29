@@ -82,6 +82,7 @@ export type ChatMessage = {
   pendingQuestion?: string;
   imagePreview?: string;
   hasImage?: boolean;
+  attachmentName?: string;
 };
 
 export type AskResponse = {
@@ -91,6 +92,7 @@ export type AskResponse = {
   mode: "preview" | "full";
   resolved_question?: string;
   recognized_question?: string;
+  attachment_filename?: string;
 };
 
 export type SearchHit = {

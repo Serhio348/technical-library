@@ -1,4 +1,5 @@
 import { answerLibraryQuestion, type AskResult } from "../ask.js";
+import type { AskAttachment } from "../attachmentExtract.js";
 import { env } from "../config.js";
 import {
   getTree,
@@ -48,7 +49,7 @@ export async function askLibrary(
   scopePath: string,
   history: unknown,
   mode: "preview" | "full",
-  imageBuffer?: Buffer | null,
+  attachment?: AskAttachment | null,
 ): Promise<AskResult> {
-  return answerLibraryQuestion(env.LIBRARY_ROOT, slug, question, scopePath, history, mode, imageBuffer);
+  return answerLibraryQuestion(env.LIBRARY_ROOT, slug, question, scopePath, history, mode, attachment);
 }

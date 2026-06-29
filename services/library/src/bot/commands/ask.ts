@@ -1,6 +1,11 @@
 import type { Telegraf, Context } from "telegraf";
 import { isDeepSeekConfigured } from "../../config.js";
 import { isExpandRequest } from "../../ask.js";
+import {
+  attachmentKindLabel,
+  isImageAttachmentFilename,
+  type AskAttachment,
+} from "../../attachmentExtract.js";
 import { escHtml, truncate } from "../format.js";
 import { askLibrary } from "../libraryClient.js";
 import { clearInputMode, getSession } from "../session.js";
@@ -9,7 +14,7 @@ import { mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
 import { runSearchQuery } from "./search.js";
 
 export type RunAskOptions = {
-  imageBuffer?: Buffer | null;
+  attachment?: AskAttachment | null;
 };
 
 export async function runAsk(
@@ -27,25 +32,33 @@ export async function runAsk(
   }
 
   const q = question.trim();
-  const hasImage = Boolean(options.imageBuffer?.length);
-  if (!q && !hasImage) {
+  const attachment = options.attachment ?? null;
+  const hasAttachment = Boolean(attachment?.buffer?.length);
+  const isImage = attachment ? isImageAttachmentFilename(attachment.filename) : false;
+
+  if (!q && !hasAttachment) {
     session.inputMode = "question";
-    await ctx.reply("💬 Введите вопрос или 📷 фото вопроса (можно с подписью).", mainKeyboard());
+    await ctx.reply(
+      "💬 Введите вопрос или прикрепите файл (PDF, Word, фото) — можно с подписью.",
+      mainKeyboard(),
+    );
     return;
   }
 
   clearInputMode(session);
-  await ctx.reply(
-    hasImage
+
+  const status = hasAttachment
+    ? isImage
       ? "📷 Распознаю фото и ищу в документах…"
-      : mode === "full"
-        ? "Формирую подробный ответ…"
-        : "Ищу раздел в документах…",
-  );
+      : `📄 Читаю ${attachmentKindLabel(attachment!.filename)} и ищу в документах…`
+    : mode === "full"
+      ? "Формирую подробный ответ…"
+      : "Ищу раздел в документах…";
+  await ctx.reply(status);
 
   try {
     const history = mode === "full" ? session.askHistory : [];
-    const result = await askLibrary(session.slug, q, session.scopePath, history, mode, options.imageBuffer);
+    const result = await askLibrary(session.slug, q, session.scopePath, history, mode, attachment);
 
     const resolvedQuestion = result.resolved_question ?? q;
     const userHistoryContent = result.recognized_question
@@ -64,9 +77,14 @@ export async function runAsk(
     }
     session.askHistory = session.askHistory.slice(-8);
 
+    const extractedLabel = hasAttachment
+      ? isImage
+        ? "Распознано с фото"
+        : `Из ${attachmentKindLabel(attachment!.filename)}`
+      : null;
     const recognized =
-      result.recognized_question && hasImage
-        ? `<b>Распознано с фото:</b>\n${escHtml(truncate(result.recognized_question, 700))}\n\n`
+      result.recognized_question && extractedLabel
+        ? `<b>${extractedLabel}:</b>\n${escHtml(truncate(result.recognized_question, 700))}\n\n`
         : "";
 
     const sources =
@@ -83,14 +101,24 @@ export async function runAsk(
   } catch (e) {
     const msg = e instanceof Error ? e.message : "";
     console.error("[bot/ask]", e);
-    if (msg === "ocr_no_text") {
-      await ctx.reply(
-        "Не удалось прочитать текст на фото.\n\n" +
-          "• Не снимайте экран монитора — лучше скриншот (PNG) отправить файлом\n" +
-          "• Держите телефон прямо, без бликов\n" +
-          "• Текст должен быть крупным и чётким",
-        mainKeyboard(),
-      );
+    if (msg === "extract_no_text" || msg === "ocr_no_text") {
+      if (isImage) {
+        await ctx.reply(
+          "Не удалось прочитать текст на фото.\n\n" +
+            "• Не снимайте экран монитора — лучше скриншот (PNG) отправить файлом\n" +
+            "• Держите телефон прямо, без бликов\n" +
+            "• Текст должен быть крупным и чётким",
+          mainKeyboard(),
+        );
+      } else {
+        await ctx.reply(
+          "Не удалось извлечь текст из файла.\n\n" +
+            "• Для Word используйте .docx, не старый .doc\n" +
+            "• Для PDF нужен текстовый слой или чёткий скан\n" +
+            "• Можно добавить подпись с текстом вопроса",
+          mainKeyboard(),
+        );
+      }
       return;
     }
     await ctx.reply("Не удалось получить ответ.", mainKeyboard());

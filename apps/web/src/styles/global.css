@@ -1229,7 +1229,27 @@ code {
 }
 
 .tl-chat__action-btn--send {
-  grid-column: 1 / -1;
+  grid-column: auto;
+}
+
+.tl-chat__attachment-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.tl-chat__msg-file {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
 
 .tl-chat__action-btn {

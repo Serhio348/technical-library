@@ -45,18 +45,19 @@ export async function askQuestion(
   scopePath: string,
   history: ChatMessage[] = [],
   mode: "preview" | "full" = "preview",
-  image?: File | null,
+  attachment?: File | null,
 ): Promise<AskResponse> {
   const path = `/api/library/directions/${encodeURIComponent(slug)}/ask`;
   const historyPayload = history.map((m) => ({ role: m.role, content: m.content }));
 
-  if (image) {
+  if (attachment) {
     const form = new FormData();
     form.set("message", message);
     form.set("scope_path", scopePath);
     form.set("history", JSON.stringify(historyPayload));
     form.set("mode", mode);
-    form.set("image", image);
+    const isImage = attachment.type.startsWith("image/") || /\.(jpe?g|png)$/i.test(attachment.name);
+    form.set(isImage ? "image" : "document", attachment);
     return api(path, { method: "POST", form });
   }
 
@@ -251,7 +252,8 @@ export function errorMessage(code: string): string {
     case "ask_failed":
       return "Не удалось получить ответ от ИИ.";
     case "ocr_no_text":
-      return "Не удалось прочитать текст. Лучше скриншот (PNG), не фото экрана.";
+    case "extract_no_text":
+      return "Не удалось прочитать текст из файла. Для фото экрана лучше отправить скриншот (PNG).";
     case "ocr_failed":
       return "Не удалось распознать фото.";
     default:
