@@ -3,14 +3,13 @@ import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
+import { runTesseractRu, sanitizeRuOcrText } from "./tesseractRu.js";
 
 const execFileAsync = promisify(execFile);
 
 const MAX_PHOTO_OCR_CHARS = 12_000;
 const CYRILLIC_RE = /[А-Яа-яЁё]/g;
 const CYRILLIC_WORD_RE = /[А-Яа-яЁё]{4,}/g;
-/** Иероглифы и прочие ложные символы при плохом OCR. */
-const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF]/g;
 const PHOTO_PSM_MODES = ["4", "6", "3", "11"] as const;
 
 type PreprocessRecipe = "screen_inverted" | "screen_binary" | "document";
@@ -24,10 +23,7 @@ function countCyrillicWords(text: string, minLen = 4): number {
 }
 
 export function stripMisdetectedScripts(text: string): string {
-  return text
-    .replace(CJK_RE, "")
-    .replace(/[\uAC00-\uD7AF]/g, "")
-    .replace(/[\u0600-\u06FF]/g, "");
+  return sanitizeRuOcrText(text);
 }
 
 /** Чем выше — тем лучше для русскоязычного текста на фото. */
@@ -39,7 +35,6 @@ export function scorePhotoOcrQuality(text: string): number {
   const cyrillic = countCyrillicChars(cleaned);
   const latin = (cleaned.match(/[A-Za-z]/g) ?? []).length;
   const digits = (cleaned.match(/\d/g) ?? []).length;
-  const cjkLeft = (cleaned.match(CJK_RE) ?? []).length;
   const weird = (cleaned.match(/[^\n\r\t A-Za-zА-Яа-яЁё0-9.,:;!?\-–—«»"'()\/\\%+№§°]/g) ?? []).length;
   const lower = cleaned.toLowerCase();
 
@@ -48,8 +43,7 @@ export function scorePhotoOcrQuality(text: string): number {
     latin * 0.4 +
     digits * 0.3 +
     (cyrillic / Math.max(letters, 1)) * 120 -
-    cjkLeft * 50 -
-    weird * 2;
+    weird * 4;
 
   if (/вопрос/.test(lower)) score += 30;
   if (/вариант/.test(lower)) score += 30;
@@ -155,40 +149,22 @@ async function preprocessPhoto(
   );
 }
 
-async function runTesseract(
-  imagePath: string,
-  timeoutMs: number,
-  psm: string,
-  lang: string,
-): Promise<string> {
-  const { stdout } = await execFileAsync(
-    "tesseract",
-    [imagePath, "stdout", "-l", lang, "--oem", "1", "--psm", psm, "-c", "preserve_interword_spaces=1"],
-    { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, encoding: "utf8" },
-  );
-  return typeof stdout === "string" ? stdout : "";
-}
-
 async function ocrPhotoFile(imagePath: string, timeoutMs: number): Promise<{ text: string | null; score: number }> {
-  const langs = ["rus", "rus+eng"] as const;
   let bestText = "";
   let bestScore = 0;
 
-  const attempts = PHOTO_PSM_MODES.length * langs.length;
-  const perAttempt = Math.max(10_000, Math.floor(timeoutMs / attempts));
+  const perAttempt = Math.max(10_000, Math.floor(timeoutMs / PHOTO_PSM_MODES.length));
 
-  for (const lang of langs) {
-    for (const psm of PHOTO_PSM_MODES) {
-      try {
-        const raw = await runTesseract(imagePath, perAttempt, psm, lang);
-        const score = scorePhotoOcrQuality(raw);
-        if (score > bestScore) {
-          bestScore = score;
-          bestText = raw;
-        }
-      } catch {
-        // try next mode
+  for (const psm of PHOTO_PSM_MODES) {
+    try {
+      const raw = await runTesseractRu(imagePath, perAttempt, psm);
+      const score = scorePhotoOcrQuality(raw);
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = raw;
       }
+    } catch {
+      // try next mode
     }
   }
 

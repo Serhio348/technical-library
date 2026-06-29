@@ -5,6 +5,7 @@ import { join } from "path";
 import { promisify } from "util";
 import type { DocumentPage } from "./documentSearch.js";
 import { env } from "./config.js";
+import { runTesseractRu, sanitizeRuOcrText } from "./tesseractRu.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,7 +32,7 @@ export type PdfExtractionResult = {
 };
 
 function normalizePageText(raw: string): string {
-  return raw.replace(/\s+/g, " ").trim();
+  return sanitizeRuOcrText(raw).replace(/\s+/g, " ").trim();
 }
 
 function normalizeExtractedText(raw: string): string | null {
@@ -139,12 +140,7 @@ async function renderPdfPages(
 }
 
 async function ocrImage(imagePath: string, timeoutMs: number, psm = "3"): Promise<string> {
-  const { stdout } = await execFileAsync(
-    "tesseract",
-    [imagePath, "stdout", "-l", "rus+eng", "--oem", "1", "--psm", psm],
-    { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, encoding: "utf8" },
-  );
-  return typeof stdout === "string" ? stdout : "";
+  return runTesseractRu(imagePath, timeoutMs, psm, { preserveSpaces: false });
 }
 
 export { extractTextFromImageBuffer, isPhotoOcrUsable } from "./imageOcr.js";
