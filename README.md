@@ -173,6 +173,41 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Опционально **http://library.local** — прописать `192.168.11.83 library.local` в `hosts` на ПК.
 
+## Производительность загрузки и индексации
+
+**Загрузка и OCR — разные процессы.** Файл сохраняется сразу; индексация (OCR PDF) идёт в фоне. Если «не даёт загружать» — чаще всего сервер занят OCR или упёрся в лимиты.
+
+### Настройки в `/opt/services/technical-library/.env`
+
+| Переменная | Рекомендация | Зачем |
+|------------|--------------|-------|
+| `LIBRARY_MAX_FILE_MB` | `200` | Макс. размер одного файла |
+| `LIBRARY_UPLOAD_MAX_FILES` | `20` | Сколько файлов за один клик «Загрузить» |
+| `LIBRARY_INDEX_MAX_CONCURRENT` | `1`–`2` на слабом VPS | Сколько OCR одновременно. **3+ на слабом железе тормозит всё**, включая загрузку |
+| `LIBRARY_OCR_MAX_PAGES` | `50`–`150` | Лимит страниц OCR на PDF |
+
+После правки `.env`:
+
+```bash
+cd /opt/services/technical-library
+docker compose up -d --build
+```
+
+### Nginx (таймаут тела запроса)
+
+По умолчанию nginx обрывает медленную загрузку через **60 с**. В `deploy/nginx/technical-library.conf` задано `client_body_timeout 600s` и `client_max_body_size 512M`. После обновления конфига:
+
+```bash
+sudo cp deploy/nginx/technical-library.conf /etc/nginx/sites-available/technical-library
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Практические советы
+
+- Не запускайте **«Переиндексировать папку»** на сотни PDF, если нужно активно загружать файлы — OCR забирает CPU.
+- Word/TXT/DOCX индексируются за секунды; тормозят в основном **сканы и большие PDF**.
+- Проверка лимитов: `curl -s http://127.0.0.1:3021/health | jq`
+
 ## Типы документов
 
 `law`, `standard`, `tkp`, `regulation`, `instruction`, `classifier`, `other` — см. `*.library.json`.

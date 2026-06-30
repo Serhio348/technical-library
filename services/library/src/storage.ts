@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import {
   extractDocxText,
@@ -469,6 +469,33 @@ export async function writeUploadedFile(
   const absFile = join(absDir, safeFilename);
   await writeFile(absFile, buffer);
 
+  return uploadedFileEntry(safeDir, safeFilename, filename, absFile);
+}
+
+/** Запись загруженного файла с диска (без загрузки всего файла в RAM). */
+export async function writeUploadedFileFromPath(
+  root: string,
+  slug: string,
+  relDir: string,
+  filename: string,
+  srcPath: string,
+): Promise<LibraryFileEntry> {
+  const safeFilename = safeLibraryFilename(filename);
+  const safeDir = relDir.trim().replace(/\\/g, "/");
+  const absDir = resolveUnderRoot(root, slug, safeDir);
+  await mkdir(absDir, { recursive: true });
+  const absFile = join(absDir, safeFilename);
+  await copyFile(srcPath, absFile);
+
+  return uploadedFileEntry(safeDir, safeFilename, filename, absFile);
+}
+
+async function uploadedFileEntry(
+  safeDir: string,
+  safeFilename: string,
+  originalFilename: string,
+  absFile: string,
+): Promise<LibraryFileEntry> {
   const rel = safeDir ? `${safeDir}/${safeFilename}` : safeFilename;
   const st = await stat(absFile);
   return {
@@ -477,7 +504,7 @@ export async function writeUploadedFile(
     size: st.size,
     modified_at: st.mtime.toISOString(),
     kind: "file",
-    content_type: contentTypeFor(filename),
+    content_type: contentTypeFor(originalFilename),
     has_text: false,
     text_index_status: "none",
     text_index_note: null,
@@ -957,10 +984,11 @@ export async function reindexSingleFile(
   root: string,
   slug: string,
   rel: string,
+  options?: { forceOcr?: boolean },
 ): Promise<ReindexResultItem> {
   const abs = resolveFilePath(root, slug, rel);
   try {
-    const outcome = await extractTextFromFile(abs, rel, { forceOcr: true });
+    const outcome = await extractTextFromFile(abs, rel, { forceOcr: options?.forceOcr ?? false });
     await removeExtractedSidecar(root, slug, rel);
     await writeExtractedSidecar(root, slug, rel, outcome);
     await ensureCatalogSidecar(root, slug, rel);

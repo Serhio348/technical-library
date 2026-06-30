@@ -216,7 +216,7 @@ export async function extractPdfWithFallback(
   }
 
   const mustCompareOcr =
-    needsOcrFallback(parsed, pageCount) || pageCount >= MIN_PAGES_FOR_OCR_COMPARE;
+    needsOcrFallback(parsed, pageCount) || looksLikeTocHeavyText(parsed ?? "", pageCount);
 
   if (!mustCompareOcr) {
     return {

@@ -59,6 +59,8 @@ export function App(): React.ReactElement {
   const [currentPath, setCurrentPath] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const uploadBusy = uploadingCount > 0;
   const [error, setError] = useState<string | null>(null);
   const [newFolder, setNewFolder] = useState("");
   const [uploadDocType, setUploadDocType] = useState<DocumentType | "">("");
@@ -334,18 +336,24 @@ export function App(): React.ReactElement {
 
   const handleUpload = async (files: FileList | File[]): Promise<void> => {
     if (!activeSlug || files.length === 0) return;
-    setBusy(true);
+    setUploadingCount((count) => count + 1);
     setError(null);
     try {
       const result = await uploadFiles(activeSlug, currentPath, [...files], uploadDocType || undefined);
-      if (result.job_id) {
-        await trackIndexJob(await fetchIndexJobStatus(activeSlug, result.job_id));
-      }
-      await reloadTree(activeSlug, currentPath);
+      void (async () => {
+        try {
+          if (result.job_id) {
+            trackIndexJob(await fetchIndexJobStatus(activeSlug, result.job_id));
+          }
+          await reloadTree(activeSlug, currentPath);
+        } catch {
+          // индексация и обновление списка — в фоне, не блокируют следующую загрузку
+        }
+      })();
     } catch (e) {
       setError(errorMessage(e instanceof Error ? e.message : "error"));
     } finally {
-      setBusy(false);
+      setUploadingCount((count) => Math.max(0, count - 1));
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -441,6 +449,7 @@ export function App(): React.ReactElement {
             newFolder={newFolder}
             uploadDocType={uploadDocType}
             busy={busy}
+            uploadBusy={uploadBusy}
             maxFileMb={maxFileMb}
             fileInputRef={fileInputRef}
             onNavigate={navigateFolder}
@@ -611,6 +620,7 @@ function DirectionView({
   newFolder,
   uploadDocType,
   busy,
+  uploadBusy,
   maxFileMb,
   fileInputRef,
   onNavigate,
@@ -636,6 +646,7 @@ function DirectionView({
   newFolder: string;
   uploadDocType: DocumentType | "";
   busy: boolean;
+  uploadBusy: boolean;
   maxFileMb: number;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onNavigate: (path: string) => void;
@@ -779,11 +790,11 @@ function DirectionView({
             <button
               type="button"
               className="tl-btn tl-btn--primary"
-              disabled={busy}
+              disabled={uploadBusy}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload size={16} />
-              {busy ? "Загрузка…" : "Загрузить"}
+              {uploadBusy ? "Загрузка…" : "Загрузить"}
             </button>
             <div className="tl-menu-wrap" ref={menuRef}>
               <button
@@ -875,8 +886,8 @@ function DirectionView({
                     className="tl-icon-btn"
                     title={
                       file.text_index_status === "ready"
-                        ? "Переиндексировать заново (OCR)"
-                        : "Переиндексировать файл (OCR)"
+                        ? "Переиндексировать (текстовый слой, быстро)"
+                        : "Переиндексировать файл"
                     }
                     disabled={isFileIndexing(file.path)}
                     onClick={() => onReindexFile(file.path)}

@@ -10,6 +10,7 @@ export type TextIndexStatus = "none" | "ready" | "partial";
 
 export type StoredIndexMeta = {
   extractor?: string;
+  chars?: number;
   index_status?: "ready" | "partial";
   index_note?: string | null;
   source_pages?: number;
@@ -106,6 +107,14 @@ export function resolveIndexDisplay(
   }
 
   if (meta.extractor !== "tesseract-ocr") {
+    const chars = meta.chars ?? 0;
+    const sourcePages = meta.source_pages ?? 0;
+    const denseLayer =
+      chars >= 120 &&
+      (sourcePages <= 1 || chars / Math.max(sourcePages, 1) >= MIN_CHARS_PER_PAGE);
+    if (meta.index_status === undefined && denseLayer) {
+      return { text_index_status: "ready", text_index_note: null };
+    }
     return {
       text_index_status: "partial",
       text_index_note: "Текстовый слой PDF — для ИИ может быть неполным. Запустите переиндексацию.",

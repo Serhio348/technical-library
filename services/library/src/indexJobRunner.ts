@@ -8,7 +8,7 @@ import {
   updateIndexJobScanComplete,
 } from "./indexJobs.js";
 import { scheduleIndexJob } from "./indexJobQueue.js";
-import { indexFileText, listIndexableFiles, reindexSingleFile } from "./storage.js";
+import { listIndexableFiles, reindexSingleFile } from "./storage.js";
 
 /** Scope job key: one file — путь файла; несколько — уникальный batch (не блокирует папку). */
 export function indexJobScopeForFiles(scopePath: string, filePaths: string[]): string {
@@ -81,11 +81,11 @@ async function runFilesIndexJob(
       updateIndexJobFileStart(jobId, path, i, filePaths.length);
       try {
         if (force) {
-          const item = await reindexSingleFile(root, slug, path);
+          const item = await reindexSingleFile(root, slug, path, { forceOcr: true });
           updateIndexJobFileDone(jobId, item.ok);
         } else {
-          const outcome = await indexFileText(root, slug, path);
-          updateIndexJobFileDone(jobId, Boolean(outcome.text?.trim()));
+          const item = await reindexSingleFile(root, slug, path);
+          updateIndexJobFileDone(jobId, item.ok);
         }
       } catch {
         updateIndexJobFileDone(jobId, false);

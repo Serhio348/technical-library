@@ -60,9 +60,23 @@ describe("resolveIndexDisplay", () => {
     ).toBe("partial");
   });
 
-  it("infers partial for legacy pdf-parse without index_status", () => {
+  it("infers ready for dense pdf-parse without index_status", () => {
     expect(
-      resolveIndexDisplay({ extractor: "pdf-parse", chars: 10000 }, true, null).text_index_status,
+      resolveIndexDisplay(
+        { extractor: "pdf-parse", chars: 120_000, source_pages: 200 },
+        true,
+        null,
+      ).text_index_status,
+    ).toBe("ready");
+  });
+
+  it("infers partial for legacy sparse pdf-parse without index_status", () => {
+    expect(
+      resolveIndexDisplay(
+        { extractor: "pdf-parse", chars: 10000, source_pages: 100 },
+        true,
+        null,
+      ).text_index_status,
     ).toBe("partial");
   });
 });

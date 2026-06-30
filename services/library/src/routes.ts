@@ -1,12 +1,17 @@
 import { Router } from "express";
 import multer from "multer";
+import { randomUUID } from "crypto";
 import { createReadStream } from "fs";
+import { mkdirSync } from "fs";
+import { unlink } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 import { stat } from "fs/promises";
 import { env, resolvedDefaultScopePath } from "./config.js";
 import { requireLibrarySecret } from "./auth.js";
 import { contentTypeForFilename, isValidRelativePath, isValidSlug } from "./paths.js";
 import { ensureUniqueSlug } from "./slugify.js";
-import { findRunningIndexJob, getIndexJob, listActiveIndexJobs } from "./indexJobs.js";
+import { findActiveIndexJob, findRunningIndexJob, getIndexJob, listActiveIndexJobs } from "./indexJobs.js";
 import { startFilesIndexJob, startFolderReindexJob } from "./indexJobRunner.js";
 import { answerLibraryQuestion } from "./ask.js";
 import {
@@ -35,7 +40,15 @@ import {
   listDocumentCatalog,
   readCatalogEntry,
   writeCatalogEntry,
+  writeUploadedFileFromPath,
 } from "./storage.js";
+
+const uploadTmpDir = join(tmpdir(), "technical-library-uploads");
+mkdirSync(uploadTmpDir, { recursive: true });
+
+async function cleanupMulterTemp(file: Express.Multer.File): Promise<void> {
+  if (file.path) await unlink(file.path).catch(() => undefined);
+}
 
 function routeSlug(raw: string | string[] | undefined): string {
   if (typeof raw === "string") return raw;
@@ -44,8 +57,17 @@ function routeSlug(raw: string | string[] | undefined): string {
 }
 
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: env.LIBRARY_MAX_FILE_MB * 1024 * 1024, files: 10 },
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadTmpDir),
+    filename: (_req, file, cb) => {
+      const safe = file.originalname.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 120);
+      cb(null, `${randomUUID()}-${safe}`);
+    },
+  }),
+  limits: {
+    fileSize: env.LIBRARY_MAX_FILE_MB * 1024 * 1024,
+    files: env.LIBRARY_UPLOAD_MAX_FILES,
+  },
 });
 
 const photoOcrUpload = multer({
@@ -238,7 +260,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
-  router.post(`${basePath}/:slug/upload`, requireLibrarySecret, upload.array("files", 10), async (req, res) => {
+  router.post(`${basePath}/:slug/upload`, requireLibrarySecret, upload.array("files", env.LIBRARY_UPLOAD_MAX_FILES), async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const relDir = typeof req.body?.path === "string" ? req.body.path.trim() : "";
     if (!isValidSlug(slug) || !isValidRelativePath(relDir)) {
@@ -259,15 +281,37 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       const saved = [];
       const savedPaths: string[] = [];
       for (const file of files) {
-        const entry = await writeUploadedFile(root, slug, relDir, file.originalname, file.buffer);
-        if (docTypeRaw) {
-          const current = await readCatalogEntry(root, slug, entry.path);
-          await writeCatalogEntry(root, slug, { ...current, doc_type: docTypeRaw });
+        try {
+          const entry = await writeUploadedFileFromPath(root, slug, relDir, file.originalname, file.path);
+          if (docTypeRaw) {
+            const current = await readCatalogEntry(root, slug, entry.path);
+            await writeCatalogEntry(root, slug, { ...current, doc_type: docTypeRaw });
+          }
+          saved.push(entry);
+          savedPaths.push(entry.path);
+        } finally {
+          await cleanupMulterTemp(file);
         }
-        saved.push(entry);
-        savedPaths.push(entry.path);
       }
-      const jobId = startFilesIndexJob(root, slug, relDir, savedPaths, true);
+      let jobId: string;
+      try {
+        jobId = startFilesIndexJob(root, slug, relDir, savedPaths, false);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "index_job_running" && savedPaths.length === 1) {
+          const existing = findActiveIndexJob(slug, savedPaths[0]!);
+          if (existing) {
+            res.status(201).json({
+              items: saved,
+              indexing: "background",
+              job_id: existing.job_id,
+              already_indexing: true,
+            });
+            return;
+          }
+        }
+        throw e;
+      }
       res.status(201).json({ items: saved, indexing: "background", job_id: jobId });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -517,9 +561,10 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         res.status(202).json({ ok: true, status: "running", job_id: running.job_id, job: running });
         return;
       }
+      const forceOcr = req.body?.force === true;
       const jobId =
         filePaths.length > 0
-          ? startFilesIndexJob(root, slug, relPath, filePaths, true)
+          ? startFilesIndexJob(root, slug, relPath, filePaths, forceOcr)
           : startFolderReindexJob(root, slug, relPath);
       const job = getIndexJob(jobId);
       res.status(202).json({
