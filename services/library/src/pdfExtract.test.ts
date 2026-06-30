@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countCyrillicChars, hasUsableTextLayer, looksLikeTocHeavyText, needsOcrFallback, scoreExtractionQuality } from "./pdfExtract";
+import { countCyrillicChars, hasUsableTextLayer, looksLikeTocHeavyText, needsOcrFallback, scoreExtractionQuality, shouldRunFullOcr } from "./pdfExtract";
 
 describe("pdf OCR quality gate", () => {
   it("requests OCR for empty or very short text", () => {
@@ -59,5 +59,12 @@ describe("pdf OCR quality gate", () => {
   it("skips OCR for dense TKP-style text layer", () => {
     const body = "Требования к эксплуатации электроустановок. ".repeat(800);
     expect(hasUsableTextLayer(body, 120)).toBe(true);
+    expect(shouldRunFullOcr(body, 120)).toBe(false);
+  });
+
+  it("skips OCR for large multi-page PDF with modest total text", () => {
+    const body = "Правила технической эксплуатации электроустановок. ".repeat(120);
+    expect(hasUsableTextLayer(body, 344)).toBe(true);
+    expect(shouldRunFullOcr(body, 344)).toBe(false);
   });
 });

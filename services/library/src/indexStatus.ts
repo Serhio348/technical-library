@@ -72,7 +72,7 @@ export function assessPdfIndexStatus(
   }
 
   if (
-    result.extractor === "pdf-parse" &&
+    (result.extractor === "pdf-parse" || result.extractor === "pdftotext") &&
     sourcePages >= MIN_PAGES_FOR_OCR_COMPARE &&
     looksLikeTocHeavyText(result.text ?? "", sourcePages)
   ) {

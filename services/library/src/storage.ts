@@ -78,7 +78,7 @@ export type SearchHit = {
 export type ExtractedTextMeta = {
   source_document: string;
   extracted_at: string;
-  extractor: "pdf-parse" | "tesseract-ocr" | "mammoth" | "legacy-doc-fallback" | "plain-text";
+  extractor: "pdf-parse" | "pdftotext" | "tesseract-ocr" | "mammoth" | "legacy-doc-fallback" | "plain-text";
   confidence: number;
   chars: number;
   source_pages?: number;

@@ -57,7 +57,7 @@ function pruneJobs(): void {
 
 export function indexActionLabel(filePath: string): string {
   const lower = filePath.toLowerCase();
-  if (lower.endsWith(".pdf")) return "OCR";
+  if (lower.endsWith(".pdf")) return "PDF";
   if (lower.endsWith(".docx") || lower.endsWith(".doc")) return "Word";
   if (lower.endsWith(".txt") || lower.endsWith(".md")) return "Текст";
   if (/\.(jpe?g|png)$/.test(lower)) return "OCR фото";
@@ -67,7 +67,7 @@ export function indexActionLabel(filePath: string): string {
 export function indexActionHint(filePath: string): string | null {
   const lower = filePath.toLowerCase();
   if (lower.endsWith(".pdf")) {
-    return "OCR — для PDF с текстом обычно достаточно ↻ без OCR; полный OCR только для сканов.";
+    return "Текстовый PDF индексируется за секунды. Полный OCR (↻ с force) — только для сканов без текста.";
   }
   if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt") || lower.endsWith(".md")) {
     return "Word и текстовые файлы индексируются за секунды — OCR не нужен.";
@@ -368,7 +368,7 @@ export function updateIndexJobFileStart(jobId: string, filePath: string, index: 
   if (!job || job.status !== "running") return;
   const name = filePath.split("/").pop() ?? filePath;
   const action = indexActionLabel(filePath);
-  const slowHint = action === "OCR" ? " (может занять несколько минут)" : "";
+  const slowHint = action === "PDF" ? "" : action === "OCR" ? " (может занять несколько минут)" : "";
   touchJob(job, {
     phase: "indexing",
     total,

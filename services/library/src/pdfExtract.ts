@@ -23,7 +23,7 @@ const CYRILLIC_RE = /[А-Яа-яЁё]/g;
 const TOC_ENTRY_RE =
   /\d+(?:\.\d+)?\.\s+[A-ZА-ЯЁ][A-ZА-ЯЁa-zа-яёA-Za-z0-9\s\-–—,/()«»"'\.]{4,120}?\s+\d{1,3}(?=\s|$|\d+\.)/g;
 
-export type PdfExtractor = "pdf-parse" | "tesseract-ocr";
+export type PdfExtractor = "pdf-parse" | "pdftotext" | "tesseract-ocr";
 
 export type PdfExtractionResult = {
   text: string | null;
@@ -75,13 +75,36 @@ export function looksLikeTocHeavyText(text: string, pageCount: number): boolean 
 
 export function hasUsableTextLayer(parsed: string | null, pageCount: number): boolean {
   if (!parsed || parsed.length < MIN_TEXT_CHARS) return false;
-  if (countCyrillicChars(parsed) < MIN_CYRILLIC_CHARS) return false;
+  const cyr = countCyrillicChars(parsed);
+  if (cyr < MIN_CYRILLIC_CHARS) return false;
+
+  // ТКП/ГОСТ на 200+ стр.: pdf-parse даёт мало символов *на страницу*, но текст в документе есть
+  if (parsed.length >= 12_000 && cyr >= 400) return true;
+  if (parsed.length >= 6_000 && cyr >= 200) return true;
+
   const charsPerPage = pageCount > 0 ? parsed.length / pageCount : parsed.length;
-  // Плотный текстовый слой (ТКП, ГОСТ) — OCR не нужен, даже если много заголовков разделов
+  // Большой документ: даже «мало на страницу» — это нормальный текстовый PDF, не скан
+  if (pageCount >= 40 && parsed.length >= 3_000 && cyr >= 150) return true;
   if (charsPerPage >= 250) return true;
-  if (pageCount >= 3 && charsPerPage < MIN_CHARS_PER_PAGE) return false;
-  if (looksLikeTocHeavyText(parsed, pageCount)) return false;
+  if (pageCount >= 3 && charsPerPage < MIN_CHARS_PER_PAGE) {
+    if (parsed.length >= 8_000 && cyr >= 250) return true;
+    return false;
+  }
+  if (looksLikeTocHeavyText(parsed, pageCount)) {
+    return parsed.length >= 10_000;
+  }
   return true;
+}
+
+/** Нужен ли полный OCR (скан / почти нет текста). Иначе — только текстовый слой. */
+export function shouldRunFullOcr(parsed: string | null, pageCount: number): boolean {
+  if (hasUsableTextLayer(parsed, pageCount)) return false;
+  if (!parsed || parsed.length < 800) return true;
+  if (countCyrillicChars(parsed) < 15) return true;
+  const cpp = pageCount > 0 ? parsed.length / pageCount : parsed.length;
+  if (pageCount >= 5 && cpp < 80) return true;
+  if (looksLikeTocHeavyText(parsed, pageCount) && parsed.length < 5_000) return true;
+  return false;
 }
 
 export function needsOcrFallback(text: string | null, pageCount = 0): boolean {
@@ -115,7 +138,7 @@ export function scoreExtractionQuality(text: string | null, pageCount: number): 
   );
 }
 
-async function extractPdfTextLayer(
+async function extractPdfTextViaPdfParse(
   filePath: string,
 ): Promise<{ text: string | null; pageCount: number }> {
   try {
@@ -133,6 +156,65 @@ async function extractPdfTextLayer(
   }
 }
 
+async function extractPdfTextWithPdftotext(filePath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      "pdftotext",
+      ["-layout", "-enc", "UTF-8", filePath, "-"],
+      {
+        timeout: 180_000,
+        maxBuffer: 48 * 1024 * 1024,
+        encoding: "utf8",
+      },
+    );
+    return normalizeExtractedText(String(stdout));
+  } catch {
+    return null;
+  }
+}
+
+function pickBestTextLayer(
+  candidates: Array<{ text: string | null; source: "pdftotext" | "pdf-parse" }>,
+  pageCount: number,
+): { text: string | null; extractor: "pdftotext" | "pdf-parse" } {
+  let best: { text: string | null; extractor: "pdftotext" | "pdf-parse" } = {
+    text: null,
+    extractor: "pdf-parse",
+  };
+  let bestScore = -1;
+  for (const item of candidates) {
+    if (!item.text) continue;
+    const score =
+      item.text.length +
+      countCyrillicChars(item.text) * 3 +
+      (hasUsableTextLayer(item.text, pageCount) ? 10_000 : 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = { text: item.text, extractor: item.source };
+    }
+  }
+  return best;
+}
+
+async function extractPdfTextLayer(
+  filePath: string,
+): Promise<{ text: string | null; pageCount: number; extractor: "pdftotext" | "pdf-parse" }> {
+  const pageCountFromInfo = await getPdfPageCount(filePath);
+  const [popplerText, parsedLayer] = await Promise.all([
+    extractPdfTextWithPdftotext(filePath),
+    extractPdfTextViaPdfParse(filePath),
+  ]);
+  const pageCount = pageCountFromInfo || parsedLayer.pageCount || 0;
+  const best = pickBestTextLayer(
+    [
+      { text: popplerText, source: "pdftotext" },
+      { text: parsedLayer.text, source: "pdf-parse" },
+    ],
+    pageCount,
+  );
+  return { text: best.text, pageCount, extractor: best.extractor };
+}
+
 async function getPdfPageCount(filePath: string): Promise<number> {
   try {
     const { stdout } = await execFileAsync("pdfinfo", [filePath], {
@@ -145,7 +227,7 @@ async function getPdfPageCount(filePath: string): Promise<number> {
   } catch {
     // fallback below
   }
-  const { pageCount } = await extractPdfTextLayer(filePath);
+  const { pageCount } = await extractPdfTextViaPdfParse(filePath);
   return pageCount;
 }
 
@@ -235,17 +317,7 @@ export async function extractPdfWithFallback(
   filePath: string,
   options?: { forceOcr?: boolean },
 ): Promise<PdfExtractionResult> {
-  const { text: parsed, pageCount } = await extractPdfTextLayer(filePath);
-
-  if (!options?.forceOcr && hasUsableTextLayer(parsed, pageCount)) {
-    return {
-      text: parsed,
-      extractor: "pdf-parse",
-      confidence: 0.85,
-      pages: null,
-      source_pages: pageCount,
-    };
-  }
+  const { text: parsed, pageCount, extractor: textExtractor } = await extractPdfTextLayer(filePath);
 
   if (options?.forceOcr) {
     const ocr = await extractPdfTextWithOcrDetailed(filePath);
@@ -260,39 +332,18 @@ export async function extractPdfWithFallback(
     }
   }
 
-  const mustCompareOcr =
-    needsOcrFallback(parsed, pageCount) || looksLikeTocHeavyText(parsed ?? "", pageCount);
-
-  if (!mustCompareOcr) {
+  if (!shouldRunFullOcr(parsed, pageCount)) {
     return {
       text: parsed,
-      extractor: "pdf-parse",
-      confidence: 0.8,
+      extractor: textExtractor,
+      confidence: hasUsableTextLayer(parsed, pageCount) ? 0.85 : 0.75,
       pages: null,
       source_pages: pageCount,
     };
   }
 
   const ocr = await extractPdfTextWithOcrDetailed(filePath);
-  if (!ocr.text) {
-    return {
-      text: parsed,
-      extractor: parsed ? "pdf-parse" : "tesseract-ocr",
-      confidence: parsed ? 0.5 : 0,
-      pages: null,
-      source_pages: pageCount,
-    };
-  }
-
-  const parsedScore = scoreExtractionQuality(parsed, pageCount);
-  const ocrScore = scoreExtractionQuality(ocr.text, pageCount);
-  const preferOcr =
-    needsOcrFallback(parsed, pageCount) ||
-    looksLikeTocHeavyText(parsed ?? "", pageCount) ||
-    ocrScore > parsedScore * 1.03 ||
-    (ocr.pages.length > 0 && parsedScore <= 0);
-
-  if (preferOcr) {
+  if (ocr.text) {
     return {
       text: ocr.text,
       extractor: "tesseract-ocr",
@@ -304,8 +355,8 @@ export async function extractPdfWithFallback(
 
   return {
     text: parsed,
-    extractor: "pdf-parse",
-    confidence: 0.8,
+    extractor: parsed ? textExtractor : "tesseract-ocr",
+    confidence: parsed ? 0.5 : 0,
     pages: null,
     source_pages: pageCount,
   };
