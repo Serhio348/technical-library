@@ -383,6 +383,22 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleForceOcrFile = async (filePath: string): Promise<void> => {
+    if (!activeSlug) return;
+    const ok = window.confirm(
+      "Полный OCR всех страниц PDF?\n\nИспользуйте только для сканов без текстового слоя. Для обычных PDF достаточно ↻.",
+    );
+    if (!ok) return;
+    setError(null);
+    try {
+      await trackIndexJob(
+        await startReindexFiles(activeSlug, filePath, [filePath], { force: true }),
+      );
+    } catch (e) {
+      setError(errorMessage(e instanceof Error ? e.message : "error"));
+    }
+  };
+
   const handleCreateFolder = async (): Promise<void> => {
     const name = newFolder.trim();
     if (!activeSlug || !name) return;
@@ -485,6 +501,7 @@ export function App(): React.ReactElement {
             indexJobs={visibleIndexJobs}
             onReindexFolder={() => void handleReindexFolder()}
             onReindexFile={(path) => void handleReindexFile(path)}
+            onForceOcrFile={(path) => void handleForceOcrFile(path)}
             llmConfigured={llmConfigured}
             chatOpen={chatOpen}
             onToggleChat={() => setChatOpen((v) => !v)}
@@ -634,6 +651,7 @@ function DirectionView({
   indexJobs,
   onReindexFolder,
   onReindexFile,
+  onForceOcrFile,
   llmConfigured,
   chatOpen,
   onToggleChat,
@@ -660,6 +678,7 @@ function DirectionView({
   indexJobs: IndexJob[];
   onReindexFolder: () => void;
   onReindexFile: (path: string) => void;
+  onForceOcrFile: (path: string) => void;
   llmConfigured: boolean;
   chatOpen: boolean;
   onToggleChat: () => void;
@@ -887,13 +906,24 @@ function DirectionView({
                     title={
                       file.text_index_status === "ready"
                         ? "Переиндексировать (текстовый слой, быстро)"
-                        : "Переиндексировать файл"
+                        : "Переиндексировать (сначала текстовый слой, OCR только если нужен)"
                     }
                     disabled={isFileIndexing(file.path)}
                     onClick={() => onReindexFile(file.path)}
                   >
                     <RefreshCw size={15} />
                   </button>
+                  {file.path.toLowerCase().endsWith(".pdf") && file.text_index_status === "partial" ? (
+                    <button
+                      type="button"
+                      className="tl-icon-btn"
+                      title="Полный OCR (медленно, для сканов)"
+                      disabled={isFileIndexing(file.path)}
+                      onClick={() => onForceOcrFile(file.path)}
+                    >
+                      OCR
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="tl-icon-btn tl-icon-btn--danger"

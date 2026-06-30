@@ -141,10 +141,18 @@ export async function startReindexFiles(
   slug: string,
   scopePath: string,
   files: string[],
+  options?: { force?: boolean },
 ): Promise<IndexJob> {
   const data = await api<{ job_id: string; job?: IndexJob }>(
     `/api/library/directions/${encodeURIComponent(slug)}/reindex`,
-    { method: "POST", json: { path: scopePath, files, force: true } },
+    {
+      method: "POST",
+      json: {
+        path: scopePath,
+        files,
+        ...(options?.force ? { force: true } : {}),
+      },
+    },
   );
   if (data.job) return data.job;
   return fetchIndexJobStatus(slug, data.job_id);
