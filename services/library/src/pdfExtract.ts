@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { mkdtemp, readFile, readdir, rm } from "fs/promises";
+import { mkdtemp, readFile, readdir, rm, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { promisify } from "util";
@@ -73,6 +73,17 @@ export function looksLikeTocHeavyText(text: string, pageCount: number): boolean 
   return false;
 }
 
+export function hasUsableTextLayer(parsed: string | null, pageCount: number): boolean {
+  if (!parsed || parsed.length < MIN_TEXT_CHARS) return false;
+  if (countCyrillicChars(parsed) < MIN_CYRILLIC_CHARS) return false;
+  const charsPerPage = pageCount > 0 ? parsed.length / pageCount : parsed.length;
+  // Плотный текстовый слой (ТКП, ГОСТ) — OCR не нужен, даже если много заголовков разделов
+  if (charsPerPage >= 250) return true;
+  if (pageCount >= 3 && charsPerPage < MIN_CHARS_PER_PAGE) return false;
+  if (looksLikeTocHeavyText(parsed, pageCount)) return false;
+  return true;
+}
+
 export function needsOcrFallback(text: string | null, pageCount = 0): boolean {
   if (!text || text.length < MIN_TEXT_CHARS) return true;
   if (countCyrillicChars(text) < MIN_CYRILLIC_CHARS) return true;
@@ -122,24 +133,38 @@ async function extractPdfTextLayer(
   }
 }
 
-async function renderPdfPages(
+async function getPdfPageCount(filePath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync("pdfinfo", [filePath], {
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+      encoding: "utf8",
+    });
+    const match = String(stdout).match(/Pages:\s+(\d+)/i);
+    if (match) return Number.parseInt(match[1]!, 10);
+  } catch {
+    // fallback below
+  }
+  const { pageCount } = await extractPdfTextLayer(filePath);
+  return pageCount;
+}
+
+async function renderPdfPage(
   filePath: string,
   outDir: string,
-  maxPages: number,
+  pageNum: number,
   timeoutMs: number,
-): Promise<string[]> {
-  const prefix = join(outDir, "page");
+): Promise<string | null> {
+  const prefix = join(outDir, `p${pageNum}`);
   const dpi = String(env.LIBRARY_OCR_DPI);
   await execFileAsync(
     "pdftoppm",
-    ["-png", "-r", dpi, "-f", "1", "-l", String(maxPages), filePath, prefix],
+    ["-png", "-r", dpi, "-f", String(pageNum), "-l", String(pageNum), filePath, prefix],
     { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
   );
   const files = await readdir(outDir);
-  return files
-    .filter((name) => name.endsWith(".png"))
-    .sort()
-    .map((name) => join(outDir, name));
+  const name = files.find((f) => f.startsWith(`p${pageNum}`) && f.endsWith(".png"));
+  return name ? join(outDir, name) : null;
 }
 
 async function ocrImage(imagePath: string, timeoutMs: number, psm = "3"): Promise<string> {
@@ -163,19 +188,23 @@ export async function extractPdfTextWithOcrDetailed(
     const tmpRoot = await mkdtemp(join(tmpdir(), "doc-library-ocr-"));
 
     try {
-      const pageImages = await renderPdfPages(filePath, tmpRoot, maxPages, timeoutMs);
-      if (pageImages.length === 0) return { text: null, pages: [] };
+      const sourcePages = await getPdfPageCount(filePath);
+      const totalPages = Math.min(sourcePages > 0 ? sourcePages : maxPages, maxPages);
+      if (totalPages <= 0) return { text: null, pages: [] };
 
-      const perPageTimeout = Math.max(5_000, Math.floor(timeoutMs / pageImages.length));
+      const perPageTimeout = Math.max(15_000, Math.floor(timeoutMs / totalPages));
       const pages: DocumentPage[] = [];
-      for (let i = 0; i < pageImages.length; i++) {
-        const imagePath = pageImages[i]!;
-        reportIndexJobOcrPage(i + 1, pageImages.length);
+      for (let page = 1; page <= totalPages; page += 1) {
+        reportIndexJobOcrPage(page, totalPages);
+        const imagePath = await renderPdfPage(filePath, tmpRoot, page, perPageTimeout);
+        if (!imagePath) continue;
         try {
           const pageText = normalizePageText(await ocrImage(imagePath, perPageTimeout));
-          if (pageText) pages.push({ page: i + 1, text: pageText });
+          if (pageText) pages.push({ page, text: pageText });
         } catch {
           // skip failed page
+        } finally {
+          await unlink(imagePath).catch(() => undefined);
         }
       }
 
@@ -207,6 +236,16 @@ export async function extractPdfWithFallback(
   options?: { forceOcr?: boolean },
 ): Promise<PdfExtractionResult> {
   const { text: parsed, pageCount } = await extractPdfTextLayer(filePath);
+
+  if (!options?.forceOcr && hasUsableTextLayer(parsed, pageCount)) {
+    return {
+      text: parsed,
+      extractor: "pdf-parse",
+      confidence: 0.85,
+      pages: null,
+      source_pages: pageCount,
+    };
+  }
 
   if (options?.forceOcr) {
     const ocr = await extractPdfTextWithOcrDetailed(filePath);

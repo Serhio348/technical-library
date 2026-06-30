@@ -67,7 +67,7 @@ export function indexActionLabel(filePath: string): string {
 export function indexActionHint(filePath: string): string | null {
   const lower = filePath.toLowerCase();
   if (lower.endsWith(".pdf")) {
-    return "OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.";
+    return "OCR — для PDF с текстом обычно достаточно ↻ без OCR; полный OCR только для сканов.";
   }
   if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt") || lower.endsWith(".md")) {
     return "Word и текстовые файлы индексируются за секунды — OCR не нужен.";
@@ -387,7 +387,7 @@ export function updateIndexJobOcrPage(jobId: string, page: number, total: number
   touchJob(job, {
     ocr_page: page,
     ocr_page_total: total,
-    message: `OCR ${page}/${total} стр.: ${name}`,
+    message: `OCR стр. ${page}/${total}: ${name}`,
   });
 }
 

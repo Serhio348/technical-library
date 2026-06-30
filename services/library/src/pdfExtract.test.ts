@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countCyrillicChars, looksLikeTocHeavyText, needsOcrFallback, scoreExtractionQuality } from "./pdfExtract";
+import { countCyrillicChars, hasUsableTextLayer, looksLikeTocHeavyText, needsOcrFallback, scoreExtractionQuality } from "./pdfExtract";
 
 describe("pdf OCR quality gate", () => {
   it("requests OCR for empty or very short text", () => {
@@ -54,5 +54,10 @@ describe("pdf OCR quality gate", () => {
     const toc = "8. ПОРЯДОК МОНТАЖА 8 10. ИЗВЛЕЧЕНИЕ 10";
     const body = "Первый запуск. Проверьте давление. Запустите насос. ".repeat(30);
     expect(scoreExtractionQuality(body, 20)).toBeGreaterThan(scoreExtractionQuality(toc, 20));
+  });
+
+  it("skips OCR for dense TKP-style text layer", () => {
+    const body = "Требования к эксплуатации электроустановок. ".repeat(800);
+    expect(hasUsableTextLayer(body, 120)).toBe(true);
   });
 });
