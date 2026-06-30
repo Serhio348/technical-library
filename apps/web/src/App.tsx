@@ -377,7 +377,7 @@ export function App(): React.ReactElement {
     if (!activeSlug) return;
     setError(null);
     try {
-      await trackIndexJob(await startReindexFiles(activeSlug, filePath, [filePath]));
+      await trackIndexJob(await startReindexFiles(activeSlug, currentPath, [filePath]));
     } catch (e) {
       setError(errorMessage(e instanceof Error ? e.message : "error"));
     }
@@ -392,7 +392,7 @@ export function App(): React.ReactElement {
     setError(null);
     try {
       await trackIndexJob(
-        await startReindexFiles(activeSlug, filePath, [filePath], { force: true }),
+        await startReindexFiles(activeSlug, currentPath, [filePath], { force: true }),
       );
     } catch (e) {
       setError(errorMessage(e instanceof Error ? e.message : "error"));

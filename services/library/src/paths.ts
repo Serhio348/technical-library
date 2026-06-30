@@ -9,12 +9,13 @@ export function isValidSlug(slug: string): boolean {
 
 export function isValidRelativePath(relPath: string): boolean {
   if (!relPath) return true;
-  if (relPath.includes("..") || relPath.startsWith("/") || relPath.startsWith("\\")) {
+  if (relPath.startsWith("/") || relPath.startsWith("\\")) {
     return false;
   }
   const parts = relPath.split(/[/\\]/).filter(Boolean);
   if (parts.length === 0) return true;
-  return parts.every((p) => p !== "." && SEGMENT_RE.test(p));
+  // Reject traversal segments only — «2006г..docx» in a filename is valid.
+  return parts.every((p) => p !== ".." && p !== "." && SEGMENT_RE.test(p));
 }
 
 /** Resolves relative path under installation root; throws if escapes root. */
@@ -32,9 +33,11 @@ export function resolveUnderRoot(root: string, installationSlug: string, relPath
 /** For legacy paths created before filename normalization; still blocks traversal. */
 export function resolveLegacyUnderRoot(root: string, installationSlug: string, relPath: string): string {
   if (!isValidSlug(installationSlug)) throw new Error("invalid_slug");
-  if (!relPath || relPath.includes("\0") || relPath.includes("..") || relPath.startsWith("/") || relPath.startsWith("\\")) {
+  if (!relPath || relPath.includes("\0") || relPath.startsWith("/") || relPath.startsWith("\\")) {
     throw new Error("invalid_path");
   }
+  const parts = relPath.split(/[/\\]/).filter(Boolean);
+  if (parts.some((p) => p === ".." || p === ".")) throw new Error("invalid_path");
 
   const installRoot = resolve(root, installationSlug);
   const abs = resolve(installRoot, relPath);
@@ -83,6 +86,7 @@ export function safeLibraryFilename(name: string): string {
     .pop()
     ?.trim()
     .replace(/\s+/g, " ")
+    .replace(/\.{2,}/g, ".")
     .replace(/[^a-zA-Z0-9._,\-\u0400-\u04FF №()]/g, "_");
   if (!base || !isAllowedFilename(base)) throw new Error("invalid_file_type");
   return base;

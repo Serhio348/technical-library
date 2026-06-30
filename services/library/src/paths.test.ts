@@ -20,6 +20,8 @@ describe("library paths", () => {
     expect(isValidRelativePath("")).toBe(true);
     expect(isValidRelativePath("registr/manual.pdf")).toBe(true);
     expect(isValidRelativePath("../x")).toBe(false);
+    expect(isValidRelativePath("СИЗ/Постановление 110 от 2006г..docx")).toBe(true);
+    expect(isValidRelativePath("a/../b")).toBe(false);
   });
 
   it("decodes mojibake UTF-8 filenames from multipart headers", () => {
