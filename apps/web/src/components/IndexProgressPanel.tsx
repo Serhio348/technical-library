@@ -1,11 +1,17 @@
 import { formatDuration } from "../api";
 import type { IndexJob } from "../types";
 
-function indexHintForFile(filePath: string | null, percent: number): string | null {
+function indexHintForFile(job: IndexJob): string | null {
+  const filePath = job.current_file;
   if (!filePath) return null;
   const lower = filePath.toLowerCase();
-  if (lower.endsWith(".pdf") && percent >= 88) {
-    return "OCR большого PDF может занять до 15 мин — полоска на 90%+ это нормально, дождитесь завершения.";
+  if (lower.endsWith(".pdf")) {
+    if (job.ocr_page_total && job.ocr_page) {
+      return `OCR: страница ${job.ocr_page} из ${job.ocr_page_total}. При 2+ задачах OCR идёт по очереди — интерфейс не завис, дождитесь завершения.`;
+    }
+    if (job.percent >= 88) {
+      return "OCR большого PDF может занять длительное время — полоска движется по страницам.";
+    }
   }
   if (lower.endsWith(".docx") || lower.endsWith(".doc") || lower.endsWith(".txt") || lower.endsWith(".md")) {
     return "Word и текстовые файлы индексируются за секунды — OCR не нужен.";
@@ -69,7 +75,7 @@ function IndexProgressItem({ job }: { job: IndexJob }): React.ReactElement {
                 Осталось: {formatDuration(job.eta_seconds)} · прошло {formatDuration(job.elapsed_seconds)}
               </span>
               {(() => {
-                const hint = indexHintForFile(job.current_file, job.percent);
+                const hint = indexHintForFile(job);
                 return hint ? <span className="tl-index-panel__hint">{hint}</span> : null;
               })()}
             </span>

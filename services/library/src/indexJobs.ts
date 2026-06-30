@@ -18,6 +18,8 @@ export type IndexJobSnapshot = {
   failed: number;
   percent: number;
   current_file: string | null;
+  ocr_page: number | null;
+  ocr_page_total: number | null;
   elapsed_seconds: number;
   eta_seconds: number | null;
   queue_position: number | null;
@@ -31,9 +33,17 @@ type IndexJob = IndexJobSnapshot & {
 
 const jobs = new Map<string, IndexJob>();
 const MAX_JOBS = 40;
+const MS_PER_OCR_PAGE = 6_000;
 
-function typicalFileMs(): number {
-  return Math.min(env.LIBRARY_OCR_TIMEOUT_SEC * 500, 120_000);
+function typicalFileMsForJob(job: IndexJob): number {
+  if (job.ocr_page_total && job.ocr_page_total > 0) {
+    return job.ocr_page_total * MS_PER_OCR_PAGE;
+  }
+  const lower = job.current_file?.toLowerCase() ?? "";
+  if (lower.endsWith(".pdf")) {
+    return Math.min(env.LIBRARY_OCR_MAX_PAGES * MS_PER_OCR_PAGE, env.LIBRARY_OCR_TIMEOUT_SEC * 1000);
+  }
+  return 30_000;
 }
 
 function pruneJobs(): void {
@@ -69,20 +79,24 @@ export function inFileProgressWeight(
   fileStartedAtMs: number | null,
   fileEstimateMs: number,
   nowMs = Date.now(),
+  ocrPage: number | null = null,
+  ocrPageTotal: number | null = null,
 ): number {
+  if (ocrPageTotal && ocrPageTotal > 0 && ocrPage !== null && ocrPage >= 0) {
+    return Math.min(0.99, Math.max(0.01, ocrPage / ocrPageTotal));
+  }
   if (!currentFile || !fileStartedAtMs) return 0;
   const elapsed = Math.max(0, nowMs - fileStartedAtMs);
   if (elapsed <= 0) return 0.03;
 
   const estimate = Math.max(fileEstimateMs, 30_000);
   const fastRatio = Math.min(1, elapsed / estimate);
-  const fastWeight = 0.03 + fastRatio * 0.89; // до ~92% на типичном файле
+  const fastWeight = 0.03 + fastRatio * 0.89;
 
   if (fastRatio < 1) return fastWeight;
 
-  // Долгий OCR: ползём ещё до ~97% за следующие 2× оценку (чтобы не «залипало» на 92%)
-  const overtimeRatio = Math.min(1, (elapsed - estimate) / (estimate * 2));
-  return fastWeight + overtimeRatio * 0.05;
+  const overtimeRatio = Math.min(1, (elapsed - estimate) / (estimate * 4));
+  return Math.min(0.99, fastWeight + overtimeRatio * 0.07);
 }
 
 export function computePercent(
@@ -92,11 +106,20 @@ export function computePercent(
   currentFile: string | null = null,
   fileStartedAtMs: number | null = null,
   nowMs = Date.now(),
-  fileEstimateMs = typicalFileMs(),
+  fileEstimateMs = 120_000,
+  ocrPage: number | null = null,
+  ocrPageTotal: number | null = null,
 ): number {
   if (phase === "scanning") return 0;
   if (total <= 0) return processed > 0 ? 100 : 0;
-  const inFile = inFileProgressWeight(currentFile, fileStartedAtMs, fileEstimateMs, nowMs);
+  const inFile = inFileProgressWeight(
+    currentFile,
+    fileStartedAtMs,
+    fileEstimateMs,
+    nowMs,
+    ocrPage,
+    ocrPageTotal,
+  );
   const raw = ((processed + inFile) / total) * 100;
   if (currentFile && processed < total) {
     return Math.min(99, Math.max(1, Math.round(raw)));
@@ -111,13 +134,22 @@ export function computeEtaSeconds(
   currentFile: string | null = null,
   fileStartedAtMs: number | null = null,
   nowMs = Date.now(),
-  fileEstimateMs = typicalFileMs(),
+  fileEstimateMs = 120_000,
+  ocrPage: number | null = null,
+  ocrPageTotal: number | null = null,
 ): number | null {
   if (total <= 0) return null;
   if (processed >= total) return 0;
 
   const elapsed = Math.max(0, nowMs - startedAtMs);
-  const inFile = inFileProgressWeight(currentFile, fileStartedAtMs, fileEstimateMs, nowMs);
+  const inFile = inFileProgressWeight(
+    currentFile,
+    fileStartedAtMs,
+    fileEstimateMs,
+    nowMs,
+    ocrPage,
+    ocrPageTotal,
+  );
   const effectiveDone = processed + inFile;
 
   if (effectiveDone > 0) {
@@ -129,7 +161,7 @@ export function computeEtaSeconds(
 }
 
 function snapshot(job: IndexJob): IndexJobSnapshot {
-  const fileEstimateMs = typicalFileMs();
+  const fileEstimateMs = typicalFileMsForJob(job);
   const nowMs = Date.now();
   const elapsed_seconds =
     job.status === "queued"
@@ -146,6 +178,8 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
           job.file_started_at_ms,
           nowMs,
           fileEstimateMs,
+          job.ocr_page,
+          job.ocr_page_total,
         );
   const eta_seconds =
     job.status === "queued"
@@ -158,6 +192,8 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
           job.file_started_at_ms,
           nowMs,
           fileEstimateMs,
+          job.ocr_page,
+          job.ocr_page_total,
         );
   return {
     job_id: job.job_id,
@@ -171,6 +207,8 @@ function snapshot(job: IndexJob): IndexJobSnapshot {
     failed: job.failed,
     percent,
     current_file: job.current_file,
+    ocr_page: job.ocr_page,
+    ocr_page_total: job.ocr_page_total,
     elapsed_seconds,
     eta_seconds,
     queue_position: job.queue_position,
@@ -263,6 +301,8 @@ export function createIndexJob(slug: string, scopePath: string): IndexJob {
     failed: 0,
     percent: 0,
     current_file: null,
+    ocr_page: null,
+    ocr_page_total: null,
     elapsed_seconds: 0,
     eta_seconds: null,
     queue_position: null,
@@ -333,8 +373,21 @@ export function updateIndexJobFileStart(jobId: string, filePath: string, index: 
     phase: "indexing",
     total,
     current_file: filePath,
+    ocr_page: null,
+    ocr_page_total: null,
     file_started_at_ms: Date.now(),
     message: `${action} ${index + 1}/${total}: ${name}${slowHint}`,
+  });
+}
+
+export function updateIndexJobOcrPage(jobId: string, page: number, total: number): void {
+  const job = jobs.get(jobId);
+  if (!job || job.status !== "running") return;
+  const name = job.current_file?.split("/").pop() ?? job.current_file ?? "файл";
+  touchJob(job, {
+    ocr_page: page,
+    ocr_page_total: total,
+    message: `OCR ${page}/${total} стр.: ${name}`,
   });
 }
 
@@ -346,6 +399,8 @@ export function updateIndexJobFileDone(jobId: string, ok: boolean): void {
     updated: job.updated + (ok ? 1 : 0),
     failed: job.failed + (ok ? 0 : 1),
     current_file: null,
+    ocr_page: null,
+    ocr_page_total: null,
     file_started_at_ms: null,
     message:
       job.total > 0
@@ -361,6 +416,8 @@ export function finishIndexJob(jobId: string, failed: boolean, message?: string)
     status: failed ? "failed" : "done",
     phase: "indexing",
     current_file: null,
+    ocr_page: null,
+    ocr_page_total: null,
     file_started_at_ms: null,
     message:
       message ??

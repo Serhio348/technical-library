@@ -39,10 +39,15 @@ describe("inFileProgressWeight", () => {
     const t0 = 1_000_000;
     const estimate = 60_000;
     const atEstimate = inFileProgressWeight("a.pdf", t0, estimate, t0 + estimate);
-    const later = inFileProgressWeight("a.pdf", t0, estimate, t0 + estimate * 2);
+    const later = inFileProgressWeight("a.pdf", t0, estimate, t0 + estimate * 4);
     expect(atEstimate).toBeCloseTo(0.92, 2);
     expect(later).toBeGreaterThan(atEstimate);
-    expect(later).toBeLessThanOrEqual(0.97);
+    expect(later).toBeLessThanOrEqual(0.99);
+  });
+
+  it("uses page progress when ocr_page_total is set", () => {
+    const w = inFileProgressWeight("a.pdf", 1000, 60_000, 2000, 50, 100);
+    expect(w).toBeCloseTo(0.5, 1);
   });
 });
 
@@ -95,6 +100,8 @@ describe("indexJobMatchesView", () => {
     failed: 0,
     percent: 0,
     current_file: null,
+    ocr_page: null,
+    ocr_page_total: null,
     elapsed_seconds: 0,
     eta_seconds: null,
     queue_position: null,

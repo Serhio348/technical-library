@@ -27,7 +27,11 @@ const envSchema = z.object({
   LIBRARY_UPLOAD_MAX_FILES: z.coerce.number().int().positive().default(20),
   LIBRARY_OCR_MAX_PAGES: z.coerce.number().int().positive().default(150),
   LIBRARY_OCR_TIMEOUT_SEC: z.coerce.number().int().positive().default(900),
-  LIBRARY_INDEX_MAX_CONCURRENT: z.coerce.number().int().positive().default(3),
+  /** DPI для pdftoppm (150 быстрее, 200 точнее). */
+  LIBRARY_OCR_DPI: z.coerce.number().int().positive().default(150),
+  /** Сколько OCR-пайплайнов одновременно (tesseract). На VPS обычно 1. */
+  LIBRARY_OCR_MAX_CONCURRENT: z.coerce.number().int().positive().default(1),
+  LIBRARY_INDEX_MAX_CONCURRENT: z.coerce.number().int().positive().default(2),
   DEEPSEEK_API_KEY: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z.string().min(8).optional(),

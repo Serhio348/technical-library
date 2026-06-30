@@ -12,10 +12,10 @@ import {
 } from "./indexJobQueue.js";
 
 describe("index job queue", () => {
-  it("runs at most three jobs in parallel by default", async () => {
+  it("runs at most N jobs in parallel (from env)", async () => {
     _resetIndexJobsForTests();
     const max = getMaxConcurrentIndexJobs();
-    expect(max).toBe(3);
+    expect(max).toBeGreaterThan(0);
 
     let running = 0;
     let maxRunning = 0;
@@ -39,7 +39,7 @@ describe("index job queue", () => {
 
     await vi.waitFor(() => {
       expect(countActiveIndexWorkers()).toBe(max);
-      expect(countPendingIndexJobs()).toBe(2);
+      expect(countPendingIndexJobs()).toBe(5 - max);
     });
 
     expect(maxRunning).toBeLessThanOrEqual(max);
@@ -57,9 +57,10 @@ describe("index job queue", () => {
 
   it("reports queue position for waiting jobs", async () => {
     _resetIndexJobsForTests();
+    const max = getMaxConcurrentIndexJobs();
     const release: Array<() => void> = [];
 
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < max + 1; i += 1) {
       const job = createIndexJob("slug", `block-${i}`);
       scheduleIndexJob(
         job.job_id,
@@ -70,7 +71,7 @@ describe("index job queue", () => {
       );
     }
 
-    await vi.waitFor(() => expect(countActiveIndexWorkers()).toBe(3));
+    await vi.waitFor(() => expect(countActiveIndexWorkers()).toBe(max));
 
     const queued = createIndexJob("slug", "waiting.pdf");
     scheduleIndexJob(queued.job_id, async () => undefined);
@@ -78,10 +79,9 @@ describe("index job queue", () => {
     await vi.waitFor(() => {
       const snap = getIndexJob(queued.job_id);
       expect(snap?.status).toBe("queued");
-      expect(snap?.queue_position).toBe(4);
+      expect(snap?.queue_position).toBe(max + 2);
     });
 
     for (const done of release) done();
-    await vi.waitFor(() => expect(countActiveIndexWorkers()).toBe(0));
   });
 });

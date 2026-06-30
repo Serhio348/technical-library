@@ -5,6 +5,8 @@ import { join } from "path";
 import { promisify } from "util";
 import type { DocumentPage } from "./documentSearch.js";
 import { env } from "./config.js";
+import { reportIndexJobOcrPage } from "./indexJobContext.js";
+import { withOcrLock } from "./ocrLock.js";
 import { runTesseractRu, sanitizeRuOcrText } from "./tesseractRu.js";
 
 const execFileAsync = promisify(execFile);
@@ -127,9 +129,10 @@ async function renderPdfPages(
   timeoutMs: number,
 ): Promise<string[]> {
   const prefix = join(outDir, "page");
+  const dpi = String(env.LIBRARY_OCR_DPI);
   await execFileAsync(
     "pdftoppm",
-    ["-png", "-r", "200", "-f", "1", "-l", String(maxPages), filePath, prefix],
+    ["-png", "-r", dpi, "-f", "1", "-l", String(maxPages), filePath, prefix],
     { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
   );
   const files = await readdir(outDir);
@@ -154,33 +157,36 @@ export async function extractPdfTextWithOcrDetailed(
   filePath: string,
   options?: { maxPages?: number; timeoutMs?: number },
 ): Promise<OcrExtraction> {
-  const maxPages = options?.maxPages ?? env.LIBRARY_OCR_MAX_PAGES;
-  const timeoutMs = options?.timeoutMs ?? env.LIBRARY_OCR_TIMEOUT_SEC * 1000;
-  const tmpRoot = await mkdtemp(join(tmpdir(), "doc-library-ocr-"));
+  return withOcrLock(async () => {
+    const maxPages = options?.maxPages ?? env.LIBRARY_OCR_MAX_PAGES;
+    const timeoutMs = options?.timeoutMs ?? env.LIBRARY_OCR_TIMEOUT_SEC * 1000;
+    const tmpRoot = await mkdtemp(join(tmpdir(), "doc-library-ocr-"));
 
-  try {
-    const pageImages = await renderPdfPages(filePath, tmpRoot, maxPages, timeoutMs);
-    if (pageImages.length === 0) return { text: null, pages: [] };
+    try {
+      const pageImages = await renderPdfPages(filePath, tmpRoot, maxPages, timeoutMs);
+      if (pageImages.length === 0) return { text: null, pages: [] };
 
-    const perPageTimeout = Math.max(5_000, Math.floor(timeoutMs / pageImages.length));
-    const pages: DocumentPage[] = [];
-    for (let i = 0; i < pageImages.length; i++) {
-      const imagePath = pageImages[i]!;
-      try {
-        const pageText = normalizePageText(await ocrImage(imagePath, perPageTimeout));
-        if (pageText) pages.push({ page: i + 1, text: pageText });
-      } catch {
-        // skip failed page
+      const perPageTimeout = Math.max(5_000, Math.floor(timeoutMs / pageImages.length));
+      const pages: DocumentPage[] = [];
+      for (let i = 0; i < pageImages.length; i++) {
+        const imagePath = pageImages[i]!;
+        reportIndexJobOcrPage(i + 1, pageImages.length);
+        try {
+          const pageText = normalizePageText(await ocrImage(imagePath, perPageTimeout));
+          if (pageText) pages.push({ page: i + 1, text: pageText });
+        } catch {
+          // skip failed page
+        }
       }
-    }
 
-    const joined = normalizeExtractedText(pages.map((p) => p.text).join("\n\n"));
-    return { text: joined, pages };
-  } catch {
-    return { text: null, pages: [] };
-  } finally {
-    await rm(tmpRoot, { recursive: true, force: true }).catch(() => undefined);
-  }
+      const joined = normalizeExtractedText(pages.map((p) => p.text).join("\n\n"));
+      return { text: joined, pages };
+    } catch {
+      return { text: null, pages: [] };
+    } finally {
+      await rm(tmpRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
 }
 
 export async function extractPdfTextWithOcr(

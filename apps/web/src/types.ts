@@ -63,6 +63,8 @@ export type IndexJob = {
   failed: number;
   percent: number;
   current_file: string | null;
+  ocr_page?: number | null;
+  ocr_page_total?: number | null;
   elapsed_seconds: number;
   eta_seconds: number | null;
   queue_position?: number | null;

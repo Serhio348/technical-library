@@ -183,8 +183,11 @@ sudo nginx -t && sudo systemctl reload nginx
 |------------|--------------|-------|
 | `LIBRARY_MAX_FILE_MB` | `200` | Макс. размер одного файла |
 | `LIBRARY_UPLOAD_MAX_FILES` | `20` | Сколько файлов за один клик «Загрузить» |
-| `LIBRARY_INDEX_MAX_CONCURRENT` | `1`–`2` на слабом VPS | Сколько OCR одновременно. **3+ на слабом железе тормозит всё**, включая загрузку |
-| `LIBRARY_OCR_MAX_PAGES` | `50`–`150` | Лимит страниц OCR на PDF |
+| `LIBRARY_OCR_MAX_CONCURRENT` | **`1`** | Сколько **OCR** (tesseract) одновременно. **2+ на VPS = зависания** |
+| `LIBRARY_INDEX_MAX_CONCURRENT` | `1`–`2` | Сколько задач индексации параллельно (Word/TXT). OCR всё равно ждёт слот выше |
+| `LIBRARY_OCR_MAX_PAGES` | `50`–`150` | Лимит страниц OCR на PDF (350 = очень долго) |
+| `LIBRARY_OCR_DPI` | `150` | 150 быстрее, 200 точнее |
+| `LIBRARY_OCR_TIMEOUT_SEC` | `900`–`1800` | Таймаут на весь PDF; 3000 не ускоряет, только маскирует зависание |
 
 После правки `.env`:
 

@@ -21,6 +21,8 @@ app.get("/health", (_req, res) => {
     max_file_mb: env.LIBRARY_MAX_FILE_MB,
     upload_max_files: env.LIBRARY_UPLOAD_MAX_FILES,
     index_max_concurrent: env.LIBRARY_INDEX_MAX_CONCURRENT,
+    ocr_max_concurrent: env.LIBRARY_OCR_MAX_CONCURRENT,
+    ocr_dpi: env.LIBRARY_OCR_DPI,
     llm_configured: isDeepSeekConfigured(),
     telegram_configured: isTelegramBotConfigured(),
     telegram_running: isBotRunning(),
