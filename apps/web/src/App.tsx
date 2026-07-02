@@ -874,8 +874,18 @@ function DirectionView({
   return (
     <div className="tl-workspace" style={{ "--dir-hue": hue } as React.CSSProperties}>
       <aside className="tl-sidebar">
-        <div className="tl-sidebar__direction">
-          <h2>{direction.title}</h2>
+        <button type="button" className="tl-sidebar__back" onClick={onGoHome}>
+          <ArrowLeft size={16} />
+          Все направления
+        </button>
+
+        <div
+          className={`tl-sidebar__heading${currentPath === "" ? " tl-sidebar__heading--active" : ""}`}
+        >
+          <button type="button" className="tl-sidebar__heading-btn" onClick={() => onNavigate("")}>
+            <FolderOpen size={18} strokeWidth={1.5} />
+            <span>{direction.title}</span>
+          </button>
           <ItemActionsMenu
             actions={[
               {
@@ -894,31 +904,65 @@ function DirectionView({
             ]}
           />
         </div>
+
         <nav className="tl-sidebar__nav">
-          <button type="button" className="tl-nav-item tl-nav-item--back" onClick={onGoHome}>
-            <ArrowLeft size={16} />
-            Все направления
-          </button>
-          <button
-            type="button"
-            className={`tl-nav-item${currentPath === "" ? " tl-nav-item--active" : ""}`}
-            onClick={() => onNavigate("")}
-          >
-            <FolderOpen size={16} />
-            Корень направления
-          </button>
-          {tree.folders.map((folder) => (
+          {currentPath !== "" ? (
             <button
-              key={folder.path}
               type="button"
-              className={`tl-nav-item${currentPath === folder.path ? " tl-nav-item--active" : ""}`}
-              onClick={() => onNavigate(folder.path)}
+              className="tl-nav-item tl-nav-item--up"
+              onClick={() =>
+                onNavigate(
+                  currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/")) : "",
+                )
+              }
             >
-              <ChevronRight size={14} />
-              {folder.name}
+              <ArrowLeft size={14} />
+              {currentPath.includes("/")
+                ? (currentPath.slice(0, currentPath.lastIndexOf("/")).split("/").pop() ?? "…")
+                : direction.title}
             </button>
+          ) : null}
+
+          {tree.folders.length > 0 ? (
+            <p className="tl-sidebar__section-label">
+              {currentPath === "" ? "Папки" : "Подпапки"}
+            </p>
+          ) : null}
+
+          {tree.folders.map((folder) => (
+            <div
+              key={folder.path}
+              className={`tl-sidebar__folder${currentPath === folder.path ? " tl-sidebar__folder--active" : ""}`}
+            >
+              <button
+                type="button"
+                className="tl-nav-item"
+                onClick={() => onNavigate(folder.path)}
+              >
+                <FolderOpen size={16} />
+                <span className="tl-nav-item__label">{folder.name}</span>
+              </button>
+              <ItemActionsMenu
+                actions={[
+                  {
+                    id: "rename",
+                    label: "Переименовать",
+                    icon: <Pencil size={15} />,
+                    onClick: () => onRenameFolder(folder.path, folder.name),
+                  },
+                  {
+                    id: "delete",
+                    label: "Удалить папку",
+                    icon: <Trash2 size={15} />,
+                    danger: true,
+                    onClick: () => void onDeleteFolder(folder.path, folder.name),
+                  },
+                ]}
+              />
+            </div>
           ))}
         </nav>
+
         <div className="tl-sidebar__newfolder">
           <input
             placeholder="Подвид / папка"
