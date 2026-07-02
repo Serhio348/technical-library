@@ -146,7 +146,7 @@ code {
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
 }
 
-.tl-btn:hover:not(:disabled) {
+.tl-btn:hover:not(:disabled):not(.tl-btn--primary) {
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -167,7 +167,9 @@ code {
 }
 
 .tl-btn--primary:hover:not(:disabled) {
-  filter: brightness(1.05);
+  background: linear-gradient(135deg, hsl(38 84% 56%), hsl(32 78% 50%));
+  filter: brightness(1.06);
+  color: #1a1208;
 }
 
 .tl-btn--ghost {
@@ -301,6 +303,13 @@ code {
   border-style: dashed;
   color: var(--text-muted);
   background: transparent;
+  cursor: pointer;
+}
+
+.tl-direction-card--add:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: hsl(38 55% 42% / 0.55);
 }
 
 .tl-workspace {
