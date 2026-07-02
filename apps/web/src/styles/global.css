@@ -340,17 +340,14 @@ code {
   align-self: start;
   position: sticky;
   top: 88px;
-  max-height: calc(100vh - 104px);
-  min-height: 280px;
+  overflow: visible;
 }
 
 .tl-sidebar__nav {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   margin: 0 -0.35rem;
   padding: 0 0.35rem;
 }
@@ -538,6 +535,13 @@ code {
 .tl-row-menu__dropdown {
   top: calc(100% + 4px);
   min-width: 200px;
+}
+
+.tl-row-menu__dropdown--fixed {
+  position: fixed;
+  top: auto;
+  right: auto;
+  z-index: 1200;
 }
 
 .tl-row-menu--left .tl-row-menu__dropdown {
