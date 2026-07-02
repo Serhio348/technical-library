@@ -331,6 +331,34 @@ code {
   align-self: start;
   position: sticky;
   top: 88px;
+  max-height: calc(100vh - 104px);
+  min-height: 280px;
+}
+
+.tl-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -0.35rem;
+  padding: 0 0.35rem;
+}
+
+.tl-sidebar__empty {
+  margin: 0.25rem 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.tl-sidebar__folder--ancestor .tl-nav-item {
+  color: hsl(var(--dir-hue) 70% 78%);
+}
+
+.tl-sidebar-tree__branch {
+  display: block;
 }
 
 .tl-sidebar__back {
@@ -516,12 +544,6 @@ code {
   border-radius: 6px;
   background: var(--accent-soft);
   color: hsl(var(--dir-hue) 80% 75%);
-}
-
-.tl-sidebar__nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
 }
 
 .tl-nav-item {

@@ -31,6 +31,7 @@ import {
   deleteFile,
   deleteSubfolder,
   getTree,
+  listFolderTree,
   listDirections,
   listExtractedDocuments,
   readExtractedText,
@@ -207,6 +208,20 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         res.status(400).json({ error: "invalid_params" });
         return;
       }
+      res.status(500).json({ error: "library_unavailable" });
+    }
+  });
+
+  router.get(`${basePath}/:slug/folder-tree`, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    if (!isValidSlug(slug)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    try {
+      const folders = await listFolderTree(root, slug);
+      res.json({ folders, direction: slug });
+    } catch {
       res.status(500).json({ error: "library_unavailable" });
     }
   });

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IndexProgressPanel } from "./components/IndexProgressPanel";
+import { SidebarFolderTree } from "./components/SidebarFolderTree";
 import { ItemActionsMenu } from "./components/ItemActionsMenu";
 import { ChatPanel } from "./components/ChatPanel";
 import { DocumentSearch } from "./components/DocumentSearch";
@@ -29,6 +30,7 @@ import {
   errorMessage,
   fetchAllActiveIndexJobs,
   fetchDirections,
+  fetchFolderTree,
   fetchHealth,
   fetchIndexJobStatus,
   fetchTree,
@@ -41,7 +43,7 @@ import {
   updateDirection,
   uploadFiles,
 } from "./api";
-import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
+import type { Direction, DocumentType, FolderTreeNode, IndexJob, LibraryTree } from "./types";
 import { DOC_TYPE_OPTIONS } from "./types";
 import { ensureUniqueSlug } from "./slugify";
 import { buildAppHash, homeAppHash, parseAppHash } from "./appRoute";
@@ -72,6 +74,7 @@ export function App(): React.ReactElement {
   const [directions, setDirections] = useState<Direction[]>([]);
   const [activeSlug, setActiveSlug] = useState<string>("");
   const [tree, setTree] = useState<LibraryTree | null>(null);
+  const [folderTree, setFolderTree] = useState<FolderTreeNode[]>([]);
   const [currentPath, setCurrentPath] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -133,8 +136,9 @@ export function App(): React.ReactElement {
   }, [activeSlug]);
 
   const reloadTree = useCallback(async (slug: string, path: string) => {
-    const data = await fetchTree(slug, path);
+    const [data, folders] = await Promise.all([fetchTree(slug, path), fetchFolderTree(slug)]);
     setTree(data);
+    setFolderTree(folders);
     setCurrentPath(data.path ?? path);
   }, []);
 
@@ -149,6 +153,7 @@ export function App(): React.ReactElement {
     if (route.view === "home") {
       setView("home");
       setTree(null);
+      setFolderTree([]);
       setCurrentPath("");
       setChatOpen(false);
       setError(null);
@@ -530,6 +535,7 @@ export function App(): React.ReactElement {
             direction={activeDirection}
             directionHue={directionHues[activeDirection.slug] ?? directionHue(activeDirection.slug)}
             tree={tree}
+            folderTree={folderTree}
             currentPath={currentPath}
             pathParts={pathParts}
             newFolder={newFolder}
@@ -794,6 +800,7 @@ function DirectionView({
   direction,
   directionHue: dirHue,
   tree,
+  folderTree,
   currentPath,
   pathParts,
   newFolder,
@@ -824,6 +831,7 @@ function DirectionView({
   direction: Direction;
   directionHue: number;
   tree: LibraryTree;
+  folderTree: FolderTreeNode[];
   currentPath: string;
   pathParts: string[];
   newFolder: string;
@@ -906,61 +914,17 @@ function DirectionView({
         </div>
 
         <nav className="tl-sidebar__nav">
-          {currentPath !== "" ? (
-            <button
-              type="button"
-              className="tl-nav-item tl-nav-item--up"
-              onClick={() =>
-                onNavigate(
-                  currentPath.includes("/") ? currentPath.slice(0, currentPath.lastIndexOf("/")) : "",
-                )
-              }
-            >
-              <ArrowLeft size={14} />
-              {currentPath.includes("/")
-                ? (currentPath.slice(0, currentPath.lastIndexOf("/")).split("/").pop() ?? "…")
-                : direction.title}
-            </button>
-          ) : null}
-
-          {tree.folders.length > 0 ? (
-            <p className="tl-sidebar__section-label">
-              {currentPath === "" ? "Папки" : "Подпапки"}
-            </p>
-          ) : null}
-
-          {tree.folders.map((folder) => (
-            <div
-              key={folder.path}
-              className={`tl-sidebar__folder${currentPath === folder.path ? " tl-sidebar__folder--active" : ""}`}
-            >
-              <button
-                type="button"
-                className="tl-nav-item"
-                onClick={() => onNavigate(folder.path)}
-              >
-                <FolderOpen size={16} />
-                <span className="tl-nav-item__label">{folder.name}</span>
-              </button>
-              <ItemActionsMenu
-                actions={[
-                  {
-                    id: "rename",
-                    label: "Переименовать",
-                    icon: <Pencil size={15} />,
-                    onClick: () => onRenameFolder(folder.path, folder.name),
-                  },
-                  {
-                    id: "delete",
-                    label: "Удалить папку",
-                    icon: <Trash2 size={15} />,
-                    danger: true,
-                    onClick: () => void onDeleteFolder(folder.path, folder.name),
-                  },
-                ]}
-              />
-            </div>
-          ))}
+          {folderTree.length > 0 ? (
+            <SidebarFolderTree
+              nodes={folderTree}
+              currentPath={currentPath}
+              onNavigate={onNavigate}
+              onRenameFolder={onRenameFolder}
+              onDeleteFolder={onDeleteFolder}
+            />
+          ) : (
+            <p className="tl-sidebar__empty">Пока нет папок — создайте ниже</p>
+          )}
         </nav>
 
         <div className="tl-sidebar__newfolder">

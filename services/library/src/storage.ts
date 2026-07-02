@@ -61,6 +61,12 @@ export type LibraryFolderEntry = {
   kind: "folder";
 };
 
+export type FolderTreeNode = {
+  name: string;
+  path: string;
+  children: FolderTreeNode[];
+};
+
 export type LibraryTree = {
   slug: string;
   title: string;
@@ -509,6 +515,30 @@ export async function getTree(root: string, slug: string, relPath = ""): Promise
     folders,
     files,
   };
+}
+
+export async function listFolderTree(root: string, slug: string): Promise<FolderTreeNode[]> {
+  const installRoot = resolveUnderRoot(root, slug);
+
+  async function walk(absDir: string, relPrefix: string): Promise<FolderTreeNode[]> {
+    let entries;
+    try {
+      entries = await readdir(absDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const nodes: FolderTreeNode[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const children = await walk(join(absDir, entry.name), rel);
+      nodes.push({ name: entry.name, path: rel.replace(/\\/g, "/"), children });
+    }
+    nodes.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    return nodes;
+  }
+
+  return walk(installRoot, "");
 }
 
 export async function writeUploadedFile(

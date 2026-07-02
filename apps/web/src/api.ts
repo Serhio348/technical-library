@@ -5,6 +5,7 @@ import type {
   DirectionsResponse,
   DocumentCatalogEntry,
   DocumentType,
+  FolderTreeNode,
   IndexJob,
   LibraryTree,
   SearchHit,
@@ -115,6 +116,13 @@ export async function deleteDirection(slug: string): Promise<void> {
 export async function fetchTree(slug: string, path = ""): Promise<LibraryTree> {
   const q = path ? `?path=${encodeURIComponent(path)}` : "";
   return api(`/api/library/directions/${encodeURIComponent(slug)}/tree${q}`);
+}
+
+export async function fetchFolderTree(slug: string): Promise<FolderTreeNode[]> {
+  const data = await api<{ folders: FolderTreeNode[] }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/folder-tree`,
+  );
+  return data.folders ?? [];
 }
 
 export async function fetchCatalog(slug: string, scopePath = ""): Promise<Record<string, DocumentCatalogEntry>> {

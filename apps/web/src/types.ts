@@ -31,6 +31,12 @@ export type LibraryFolder = {
   kind: "folder";
 };
 
+export type FolderTreeNode = {
+  name: string;
+  path: string;
+  children: FolderTreeNode[];
+};
+
 export type LibraryTree = {
   slug: string;
   title: string;
