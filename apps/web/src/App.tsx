@@ -6,6 +6,7 @@ import {
   FolderPlus,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   Plus,
   RefreshCw,
   Trash2,
@@ -20,6 +21,7 @@ import {
   assignDirectionHues,
   createDirection,
   createFolder,
+  deleteDirection,
   deleteFile,
   deleteFolder,
   directionHue,
@@ -32,8 +34,10 @@ import {
   fileUrl,
   formatBytes,
   formatDate,
+  renameFolder,
   startReindexFiles,
   startReindexFolder,
+  updateDirection,
   uploadFiles,
 } from "./api";
 import type { Direction, DocumentType, IndexJob, LibraryTree } from "./types";
@@ -51,6 +55,17 @@ import { loadPersistedIndexJobRefs, savePersistedIndexJobRefs } from "./indexJob
 
 type View = "home" | "direction";
 
+type RenameTarget =
+  | { kind: "direction"; slug: string; title: string }
+  | { kind: "folder"; path: string; name: string };
+
+function remapPathAfterFolderRename(current: string, oldPath: string, newPath: string): string {
+  if (!current) return current;
+  if (current === oldPath) return newPath;
+  if (current.startsWith(`${oldPath}/`)) return `${newPath}${current.slice(oldPath.length)}`;
+  return current;
+}
+
 export function App(): React.ReactElement {
   const [view, setView] = useState<View>("home");
   const [directions, setDirections] = useState<Direction[]>([]);
@@ -66,6 +81,8 @@ export function App(): React.ReactElement {
   const [uploadDocType, setUploadDocType] = useState<DocumentType | "">("");
   const [showCreate, setShowCreate] = useState(false);
   const [createTitle, setCreateTitle] = useState("");
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [maxFileMb, setMaxFileMb] = useState(200);
   const [llmConfigured, setLlmConfigured] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -326,6 +343,53 @@ export function App(): React.ReactElement {
     }
   };
 
+  const handleRenameSubmit = async (): Promise<void> => {
+    const name = renameValue.trim();
+    if (!renameTarget || !name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (renameTarget.kind === "direction") {
+        await updateDirection(renameTarget.slug, name);
+        await reloadDirections();
+      } else if (activeSlug) {
+        const newPath = await renameFolder(activeSlug, renameTarget.path, name);
+        const nextPath = remapPathAfterFolderRename(currentPath, renameTarget.path, newPath);
+        await reloadTree(activeSlug, nextPath);
+        if (nextPath !== currentPath) {
+          syncRouteToHash("direction", activeSlug, nextPath);
+        }
+      }
+      setRenameTarget(null);
+      setRenameValue("");
+    } catch (e) {
+      setError(errorMessage(e instanceof Error ? e.message : "error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteDirection = async (dir: Direction): Promise<void> => {
+    if (
+      !window.confirm(
+        `Удалить направление «${dir.title}» и все документы внутри?\n\nЭто действие необратимо.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteDirection(dir.slug);
+      if (activeSlug === dir.slug) goHome();
+      await reloadDirections();
+    } catch (e) {
+      setError(errorMessage(e instanceof Error ? e.message : "error"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createSlugPreview =
     createTitle.trim().length > 0
       ? ensureUniqueSlug(
@@ -454,6 +518,11 @@ export function App(): React.ReactElement {
             directionHues={directionHues}
             onOpen={openDirection}
             onCreate={() => setShowCreate(true)}
+            onRename={(dir) => {
+              setRenameTarget({ kind: "direction", slug: dir.slug, title: dir.title });
+              setRenameValue(dir.title);
+            }}
+            onDelete={(dir) => void handleDeleteDirection(dir)}
           />
         ) : activeDirection && tree ? (
           <DirectionView
@@ -475,17 +544,40 @@ export function App(): React.ReactElement {
             onCreateFolder={() => void handleCreateFolder()}
             onUpload={(files) => void handleUpload(files)}
             onDeleteFolder={async (path, name) => {
-              if (!window.confirm(`Удалить папку «${name}»?`)) return;
+              if (
+                !window.confirm(
+                  `Удалить папку «${name}» со всем содержимым?\n\nФайлы и индекс будут удалены без восстановления.`,
+                )
+              ) {
+                return;
+              }
               setBusy(true);
               try {
-                await deleteFolder(activeSlug, path);
-                await reloadTree(activeSlug, currentPath);
+                await deleteFolder(activeSlug, path, true);
+                const parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+                const nextPath =
+                  currentPath === path || currentPath.startsWith(`${path}/`) ? parent : currentPath;
+                await reloadTree(activeSlug, nextPath);
+                if (nextPath !== currentPath) syncRouteToHash("direction", activeSlug, nextPath);
               } catch (e) {
                 setError(errorMessage(e instanceof Error ? e.message : "error"));
               } finally {
                 setBusy(false);
               }
             }}
+            onRenameFolder={(path, name) => {
+              setRenameTarget({ kind: "folder", path, name });
+              setRenameValue(name);
+            }}
+            onRenameDirection={() => {
+              setRenameTarget({
+                kind: "direction",
+                slug: activeDirection.slug,
+                title: activeDirection.title,
+              });
+              setRenameValue(activeDirection.title);
+            }}
+            onDeleteDirection={() => void handleDeleteDirection(activeDirection)}
             onDeleteFile={async (path) => {
               if (!window.confirm(`Удалить файл?`)) return;
               setBusy(true);
@@ -562,6 +654,54 @@ export function App(): React.ReactElement {
         </Modal>
       ) : null}
 
+      {renameTarget ? (
+        <Modal
+          title={renameTarget.kind === "direction" ? "Переименовать направление" : "Переименовать папку"}
+          onClose={() => {
+            setRenameTarget(null);
+            setRenameValue("");
+          }}
+        >
+          <label className="tl-field">
+            <span>Название</span>
+            <input
+              value={renameValue}
+              autoFocus
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && renameValue.trim()) void handleRenameSubmit();
+              }}
+            />
+          </label>
+          {renameTarget.kind === "direction" ? (
+            <p className="tl-modal__hint">
+              Меняется только отображаемое название. Имя папки на сервере (<code>{renameTarget.slug}</code>) не
+              изменится.
+            </p>
+          ) : null}
+          <div className="tl-modal__actions">
+            <button
+              type="button"
+              className="tl-btn tl-btn--ghost"
+              onClick={() => {
+                setRenameTarget(null);
+                setRenameValue("");
+              }}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="tl-btn tl-btn--primary"
+              disabled={busy || !renameValue.trim()}
+              onClick={() => void handleRenameSubmit()}
+            >
+              Сохранить
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+
     </div>
   );
 }
@@ -571,11 +711,15 @@ function HomeView({
   directionHues,
   onOpen,
   onCreate,
+  onRename,
+  onDelete,
 }: {
   directions: Direction[];
   directionHues: Record<string, number>;
   onOpen: (slug: string) => void;
   onCreate: () => void;
+  onRename: (dir: Direction) => void;
+  onDelete: (dir: Direction) => void;
 }): React.ReactElement {
   if (directions.length === 0) {
     return (
@@ -605,18 +749,36 @@ function HomeView({
         {directions.map((dir) => {
           const hue = directionHues[dir.slug] ?? directionHue(dir.slug);
           return (
-            <button
+            <article
               key={dir.slug}
-              type="button"
               className="tl-direction-card"
               style={{ "--dir-hue": hue } as React.CSSProperties}
-              onClick={() => onOpen(dir.slug)}
             >
-              <span className="tl-direction-card__icon">
-                <FolderOpen size={28} strokeWidth={1.5} />
-              </span>
-              <span className="tl-direction-card__title">{dir.title}</span>
-            </button>
+              <button type="button" className="tl-direction-card__open" onClick={() => onOpen(dir.slug)}>
+                <span className="tl-direction-card__icon">
+                  <FolderOpen size={28} strokeWidth={1.5} />
+                </span>
+                <span className="tl-direction-card__title">{dir.title}</span>
+              </button>
+              <div className="tl-direction-card__actions">
+                <button
+                  type="button"
+                  className="tl-icon-btn"
+                  title="Переименовать"
+                  onClick={() => onRename(dir)}
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="tl-icon-btn tl-icon-btn--danger"
+                  title="Удалить направление"
+                  onClick={() => onDelete(dir)}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </article>
           );
         })}
         <button type="button" className="tl-direction-card tl-direction-card--add" onClick={onCreate}>
@@ -647,6 +809,9 @@ function DirectionView({
   onCreateFolder,
   onUpload,
   onDeleteFolder,
+  onRenameFolder,
+  onRenameDirection,
+  onDeleteDirection,
   onDeleteFile,
   indexJobs,
   onReindexFolder,
@@ -674,6 +839,9 @@ function DirectionView({
   onCreateFolder: () => void;
   onUpload: (files: FileList | File[]) => void;
   onDeleteFolder: (path: string, name: string) => void;
+  onRenameFolder: (path: string, name: string) => void;
+  onRenameDirection: () => void;
+  onDeleteDirection: () => void;
   onDeleteFile: (path: string) => void;
   indexJobs: IndexJob[];
   onReindexFolder: () => void;
@@ -708,6 +876,19 @@ function DirectionView({
       <aside className="tl-sidebar">
         <div className="tl-sidebar__direction">
           <h2>{direction.title}</h2>
+          <div className="tl-sidebar__direction-actions">
+            <button type="button" className="tl-icon-btn" title="Переименовать направление" onClick={onRenameDirection}>
+              <Pencil size={15} />
+            </button>
+            <button
+              type="button"
+              className="tl-icon-btn tl-icon-btn--danger"
+              title="Удалить направление"
+              onClick={onDeleteDirection}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         </div>
         <nav className="tl-sidebar__nav">
           <button type="button" className="tl-nav-item tl-nav-item--back" onClick={onGoHome}>
@@ -866,6 +1047,14 @@ function DirectionView({
                 <button type="button" className="tl-doc-row__main" onClick={() => onNavigate(folder.path)}>
                   <FolderOpen size={20} />
                   <span>{folder.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="tl-icon-btn"
+                  title="Переименовать папку"
+                  onClick={() => onRenameFolder(folder.path, folder.name)}
+                >
+                  <Pencil size={15} />
                 </button>
                 <button
                   type="button"

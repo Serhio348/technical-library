@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedFilename, isValidRelativePath, isValidSlug, resolveUnderRoot, safeLibraryFilename } from "./paths";
+import { isAllowedFilename, isValidRelativePath, isValidSlug, resolveUnderRoot, safeLibraryFilename, safePathSegment } from "./paths";
 
 describe("library paths", () => {
   it("validates slugs", () => {
@@ -22,6 +22,11 @@ describe("library paths", () => {
     expect(isValidRelativePath("../x")).toBe(false);
     expect(isValidRelativePath("СИЗ/Постановление 110 от 2006г..docx")).toBe(true);
     expect(isValidRelativePath("a/../b")).toBe(false);
+  });
+
+  it("normalizes safe path segments", () => {
+    expect(safePathSegment("  СИЗ  ")).toBe("СИЗ");
+    expect(() => safePathSegment("..")).toThrow();
   });
 
   it("decodes mojibake UTF-8 filenames from multipart headers", () => {

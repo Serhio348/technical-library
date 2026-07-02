@@ -3,6 +3,18 @@ import { resolve, relative, sep } from "path";
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 const SEGMENT_RE = /^[a-zA-Z0-9._,\-\u0400-\u04FF №()]+$/;
 
+/** Безопасное имя сегмента пути (папка или файл). */
+export function safePathSegment(name: string): string {
+  const base = name
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\.{2,}/g, ".");
+  if (!base || base === ".." || base === "." || !SEGMENT_RE.test(base)) {
+    throw new Error("invalid_path");
+  }
+  return base;
+}
+
 export function isValidSlug(slug: string): boolean {
   return SLUG_RE.test(slug);
 }

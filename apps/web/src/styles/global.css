@@ -234,19 +234,41 @@ code {
   --dir-hue: 38;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 0.5rem;
   min-height: 148px;
-  padding: 1.25rem;
+  padding: 0;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background:
     linear-gradient(145deg, hsl(var(--dir-hue) 40% 18% / 0.5), transparent 60%),
     var(--bg-panel);
   color: var(--text);
-  cursor: pointer;
   text-align: left;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.tl-direction-card__open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1.25rem 1.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.tl-direction-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  padding: 0 0.65rem 0.65rem;
 }
 
 .tl-direction-card:hover {
@@ -309,10 +331,26 @@ code {
   top: 88px;
 }
 
+.tl-sidebar__direction {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .tl-sidebar__direction h2 {
   margin: 0.35rem 0 0;
   font-family: Literata, Georgia, serif;
   font-size: 1.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-sidebar__direction-actions {
+  display: flex;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  padding-top: 0.15rem;
 }
 
 .tl-sidebar__badge {

@@ -27,6 +27,7 @@ import {
   buildLibraryContextForQuery,
   createDirection,
   createSubfolder,
+  deleteDirection,
   deleteFile,
   deleteSubfolder,
   getTree,
@@ -34,7 +35,9 @@ import {
   listExtractedDocuments,
   readExtractedText,
   readExtractedTextMeta,
+  renameSubfolder,
   resolveFilePath,
+  updateDirectionTitle,
   writeUploadedFile,
   searchInstallation,
   listDocumentCatalog,
@@ -154,6 +157,40 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
+  router.patch(`${basePath}/:slug`, requireLibrarySecret, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    const titleRaw = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    if (!isValidSlug(slug) || !titleRaw) {
+      res.status(400).json({ error: "title_required" });
+      return;
+    }
+    try {
+      const direction = await updateDirectionTitle(root, slug, titleRaw);
+      res.json({ direction, item: direction });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "title_required") {
+        res.status(400).json({ error: "title_required" });
+        return;
+      }
+      res.status(404).json({ error: "not_found" });
+    }
+  });
+
+  router.delete(`${basePath}/:slug`, requireLibrarySecret, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    if (!isValidSlug(slug)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    try {
+      await deleteDirection(root, slug);
+      res.json({ ok: true });
+    } catch {
+      res.status(404).json({ error: "not_found" });
+    }
+  });
+
   router.get(`${basePath}/:slug/tree`, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.query.path === "string" ? req.query.path : "";
@@ -240,15 +277,41 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     }
   });
 
+  router.patch(`${basePath}/:slug/folders`, requireLibrarySecret, async (req, res) => {
+    const slug = routeSlug(req.params.slug);
+    const pathParam = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+    const nameRaw = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!isValidSlug(slug) || !pathParam || !nameRaw || !isValidRelativePath(pathParam)) {
+      res.status(400).json({ error: "invalid_params" });
+      return;
+    }
+    try {
+      const path = await renameSubfolder(root, slug, pathParam, nameRaw);
+      res.json({ ok: true, path });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "path_exists") {
+        res.status(409).json({ error: "path_exists" });
+        return;
+      }
+      if (msg === "invalid_path") {
+        res.status(400).json({ error: "invalid_params" });
+        return;
+      }
+      res.status(404).json({ error: "not_found" });
+    }
+  });
+
   router.delete(`${basePath}/:slug/folders`, requireLibrarySecret, async (req, res) => {
     const slug = routeSlug(req.params.slug);
     const pathParam = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const recursive = req.query.recursive === "1" || req.query.recursive === "true";
     if (!isValidSlug(slug) || !pathParam || !isValidRelativePath(pathParam)) {
       res.status(400).json({ error: "invalid_params" });
       return;
     }
     try {
-      await deleteSubfolder(root, slug, pathParam);
+      await deleteSubfolder(root, slug, pathParam, { recursive });
       res.json({ ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";

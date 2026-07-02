@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "fs/promises";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import {
   extractDocxText,
@@ -12,6 +12,7 @@ import {
   resolveLegacyUnderRoot,
   resolveUnderRoot,
   safeLibraryFilename,
+  safePathSegment,
 } from "./paths.js";
 import {
   buildDocumentContext,
@@ -174,6 +175,24 @@ export async function createDirection(
   return meta;
 }
 
+export async function updateDirectionTitle(
+  root: string,
+  slug: string,
+  title: string,
+): Promise<DirectionMeta> {
+  const trimmed = title.trim();
+  if (!trimmed) throw new Error("title_required");
+  await stat(resolveUnderRoot(root, slug));
+  const meta = await readDirectionMeta(root, slug);
+  const updated: DirectionMeta = { ...meta, title: trimmed };
+  await writeDirectionMeta(root, updated);
+  return updated;
+}
+
+export async function deleteDirection(root: string, slug: string): Promise<void> {
+  await rm(resolveUnderRoot(root, slug), { recursive: true, force: true });
+}
+
 export const createInstallation = createDirection;
 
 export async function ensureDirection(root: string, slug: string, title: string): Promise<void> {
@@ -195,8 +214,45 @@ export async function createSubfolder(
   await mkdir(abs, { recursive: true });
 }
 
-export async function deleteSubfolder(root: string, slug: string, relPath: string): Promise<void> {
+export async function renameSubfolder(
+  root: string,
+  slug: string,
+  relPath: string,
+  newName: string,
+): Promise<string> {
+  const segment = safePathSegment(newName);
+  const parent = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+  const newPath = parent ? `${parent}/${segment}` : segment;
+  if (newPath === relPath) return newPath;
+
+  const oldAbs = resolveUnderRoot(root, slug, relPath);
+  const newAbs = resolveUnderRoot(root, slug, newPath);
+  try {
+    await stat(oldAbs);
+  } catch {
+    throw new Error("not_found");
+  }
+  try {
+    await stat(newAbs);
+    throw new Error("path_exists");
+  } catch (e) {
+    if (e instanceof Error && e.message === "path_exists") throw e;
+  }
+  await rename(oldAbs, newAbs);
+  return newPath;
+}
+
+export async function deleteSubfolder(
+  root: string,
+  slug: string,
+  relPath: string,
+  options?: { recursive?: boolean },
+): Promise<void> {
   const abs = resolveUnderRoot(root, slug, relPath);
+  if (options?.recursive) {
+    await rm(abs, { recursive: true, force: true });
+    return;
+  }
   const entries = await readdir(abs);
   const visible = entries.filter(
     (n) =>
@@ -206,7 +262,7 @@ export async function deleteSubfolder(root: string, slug: string, relPath: strin
       !n.endsWith(".extracted.pages.json"),
   );
   if (visible.length > 0) throw new Error("folder_not_empty");
-  await rm(abs, { recursive: true });
+  await rm(abs, { recursive: true, force: true });
 }
 
 async function fileIndexDisplay(

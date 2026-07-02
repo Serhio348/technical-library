@@ -100,6 +100,18 @@ export async function createDirection(title: string, slug?: string): Promise<Dir
   return data.direction;
 }
 
+export async function updateDirection(slug: string, title: string): Promise<Direction> {
+  const data = await api<{ direction: Direction }>(
+    `/api/library/directions/${encodeURIComponent(slug)}`,
+    { method: "PATCH", json: { title } },
+  );
+  return data.direction;
+}
+
+export async function deleteDirection(slug: string): Promise<void> {
+  await api(`/api/library/directions/${encodeURIComponent(slug)}`, { method: "DELETE" });
+}
+
 export async function fetchTree(slug: string, path = ""): Promise<LibraryTree> {
   const q = path ? `?path=${encodeURIComponent(path)}` : "";
   return api(`/api/library/directions/${encodeURIComponent(slug)}/tree${q}`);
@@ -203,8 +215,18 @@ export async function createFolder(slug: string, path: string): Promise<void> {
   });
 }
 
-export async function deleteFolder(slug: string, path: string): Promise<void> {
-  await api(`/api/library/directions/${encodeURIComponent(slug)}/folders?path=${encodeURIComponent(path)}`, {
+export async function renameFolder(slug: string, path: string, name: string): Promise<string> {
+  const data = await api<{ path: string }>(
+    `/api/library/directions/${encodeURIComponent(slug)}/folders`,
+    { method: "PATCH", json: { path, name } },
+  );
+  return data.path;
+}
+
+export async function deleteFolder(slug: string, path: string, recursive = true): Promise<void> {
+  const params = new URLSearchParams({ path });
+  if (recursive) params.set("recursive", "1");
+  await api(`/api/library/directions/${encodeURIComponent(slug)}/folders?${params}`, {
     method: "DELETE",
   });
 }
@@ -279,7 +301,11 @@ export function errorMessage(code: string): string {
     case "file_too_large":
       return "Файл слишком большой.";
     case "folder_not_empty":
-      return "Папка не пустая — сначала удалите содержимое.";
+      return "Папка не пустая — удалите содержимое или подтвердите удаление со всеми файлами.";
+    case "path_exists":
+      return "Папка с таким именем уже существует.";
+    case "not_found":
+      return "Не найдено — обновите страницу.";
     case "index_job_running":
       return "Индексация уже выполняется — дождитесь завершения.";
     case "job_not_found":
