@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IndexProgressPanel } from "./components/IndexProgressPanel";
+import { ItemActionsMenu } from "./components/ItemActionsMenu";
 import { ChatPanel } from "./components/ChatPanel";
 import { DocumentSearch } from "./components/DocumentSearch";
 import {
@@ -754,30 +755,29 @@ function HomeView({
               className="tl-direction-card"
               style={{ "--dir-hue": hue } as React.CSSProperties}
             >
+              <ItemActionsMenu
+                actions={[
+                  {
+                    id: "rename",
+                    label: "Переименовать",
+                    icon: <Pencil size={15} />,
+                    onClick: () => onRename(dir),
+                  },
+                  {
+                    id: "delete",
+                    label: "Удалить направление",
+                    icon: <Trash2 size={15} />,
+                    danger: true,
+                    onClick: () => onDelete(dir),
+                  },
+                ]}
+              />
               <button type="button" className="tl-direction-card__open" onClick={() => onOpen(dir.slug)}>
                 <span className="tl-direction-card__icon">
                   <FolderOpen size={28} strokeWidth={1.5} />
                 </span>
                 <span className="tl-direction-card__title">{dir.title}</span>
               </button>
-              <div className="tl-direction-card__actions">
-                <button
-                  type="button"
-                  className="tl-icon-btn"
-                  title="Переименовать"
-                  onClick={() => onRename(dir)}
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  type="button"
-                  className="tl-icon-btn tl-icon-btn--danger"
-                  title="Удалить направление"
-                  onClick={() => onDelete(dir)}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
             </article>
           );
         })}
@@ -876,19 +876,23 @@ function DirectionView({
       <aside className="tl-sidebar">
         <div className="tl-sidebar__direction">
           <h2>{direction.title}</h2>
-          <div className="tl-sidebar__direction-actions">
-            <button type="button" className="tl-icon-btn" title="Переименовать направление" onClick={onRenameDirection}>
-              <Pencil size={15} />
-            </button>
-            <button
-              type="button"
-              className="tl-icon-btn tl-icon-btn--danger"
-              title="Удалить направление"
-              onClick={onDeleteDirection}
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
+          <ItemActionsMenu
+            actions={[
+              {
+                id: "rename",
+                label: "Переименовать",
+                icon: <Pencil size={15} />,
+                onClick: onRenameDirection,
+              },
+              {
+                id: "delete",
+                label: "Удалить направление",
+                icon: <Trash2 size={15} />,
+                danger: true,
+                onClick: onDeleteDirection,
+              },
+            ]}
+          />
         </div>
         <nav className="tl-sidebar__nav">
           <button type="button" className="tl-nav-item tl-nav-item--back" onClick={onGoHome}>
@@ -1048,22 +1052,23 @@ function DirectionView({
                   <FolderOpen size={20} />
                   <span>{folder.name}</span>
                 </button>
-                <button
-                  type="button"
-                  className="tl-icon-btn"
-                  title="Переименовать папку"
-                  onClick={() => onRenameFolder(folder.path, folder.name)}
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  type="button"
-                  className="tl-icon-btn tl-icon-btn--danger"
-                  title="Удалить папку"
-                  onClick={() => void onDeleteFolder(folder.path, folder.name)}
-                >
-                  <Trash2 size={15} />
-                </button>
+                <ItemActionsMenu
+                  actions={[
+                    {
+                      id: "rename",
+                      label: "Переименовать",
+                      icon: <Pencil size={15} />,
+                      onClick: () => onRenameFolder(folder.path, folder.name),
+                    },
+                    {
+                      id: "delete",
+                      label: "Удалить папку",
+                      icon: <Trash2 size={15} />,
+                      danger: true,
+                      onClick: () => void onDeleteFolder(folder.path, folder.name),
+                    },
+                  ]}
+                />
               </article>
             ))}
             {tree.files.map((file) => (

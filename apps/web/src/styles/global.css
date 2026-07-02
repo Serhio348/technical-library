@@ -232,10 +232,10 @@ code {
 
 .tl-direction-card {
   --dir-hue: 38;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.5rem;
   min-height: 148px;
   padding: 0;
   border-radius: var(--radius);
@@ -246,7 +246,14 @@ code {
   color: var(--text);
   text-align: left;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.tl-direction-card .tl-row-menu {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  z-index: 2;
 }
 
 .tl-direction-card__open {
@@ -255,20 +262,15 @@ code {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.5rem;
-  padding: 1.25rem 1.25rem 0.5rem;
+  min-height: 148px;
+  padding: 1.25rem;
   border: none;
   background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
   width: 100%;
-}
-
-.tl-direction-card__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.25rem;
-  padding: 0 0.65rem 0.65rem;
+  border-radius: inherit;
 }
 
 .tl-direction-card:hover {
@@ -351,6 +353,49 @@ code {
   gap: 0.15rem;
   flex-shrink: 0;
   padding-top: 0.15rem;
+}
+
+.tl-row-menu {
+  position: relative;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.tl-direction-card:hover .tl-row-menu,
+.tl-direction-card:focus-within .tl-row-menu,
+.tl-doc-row:hover .tl-row-menu,
+.tl-doc-row:focus-within .tl-row-menu,
+.tl-sidebar__direction:hover .tl-row-menu,
+.tl-sidebar__direction:focus-within .tl-row-menu,
+.tl-row-menu--open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tl-row-menu__trigger {
+  width: 30px;
+  height: 30px;
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(4px);
+}
+
+.tl-direction-card:hover .tl-row-menu__trigger,
+.tl-row-menu--open .tl-row-menu__trigger {
+  border-color: var(--border);
+  background: var(--bg-panel);
+}
+
+.tl-row-menu__dropdown {
+  top: calc(100% + 4px);
+  min-width: 200px;
+}
+
+.tl-row-menu--left .tl-row-menu__dropdown {
+  left: 0;
+  right: auto;
 }
 
 .tl-sidebar__badge {
@@ -503,6 +548,12 @@ code {
   gap: 0.65rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.tl-doc-row:hover,
+.tl-doc-row:focus-within {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .tl-doc-row:last-child {
@@ -946,6 +997,15 @@ code {
 
 .tl-menu__item:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.tl-menu__item--danger {
+  color: #fca5a5;
+}
+
+.tl-menu__item--danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
 }
 
 .tl-menu__item:disabled {
