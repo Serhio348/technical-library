@@ -11,6 +11,8 @@ const ALLOWED_OCR_CHAR_RE =
   /[^A-Za-zА-Яа-яЁё0-9.,:;!?\-–—«»"'()/\\%+№§°|=_\[\]{}*<>~\n\r\t ]/gu;
 
 export const TESSERACT_RU_LANG = "rus";
+/** Для фото викторин/приложений: rus+eng лучше, чем один rus при смешанном UI. */
+export const TESSERACT_PHOTO_LANG = "rus+eng";
 
 export const TESSERACT_RU_WHITELIST =
   "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя" +
@@ -22,24 +24,33 @@ export function sanitizeRuOcrText(raw: string): string {
   return raw.replace(ALLOWED_OCR_CHAR_RE, "");
 }
 
+export type TesseractRuOptions = {
+  preserveSpaces?: boolean;
+  /** LSTM + whitelist часто даёт мусор на фото — для фото отключать. */
+  useWhitelist?: boolean;
+  lang?: string;
+};
+
 export async function runTesseractRu(
   imagePath: string,
   timeoutMs: number,
   psm: string,
-  options?: { preserveSpaces?: boolean },
+  options?: TesseractRuOptions,
 ): Promise<string> {
+  const lang = options?.lang ?? TESSERACT_RU_LANG;
   const args = [
     imagePath,
     "stdout",
     "-l",
-    TESSERACT_RU_LANG,
+    lang,
     "--oem",
     "1",
     "--psm",
     psm,
-    "-c",
-    `tessedit_char_whitelist=${TESSERACT_RU_WHITELIST}`,
   ];
+  if (options?.useWhitelist !== false) {
+    args.push("-c", `tessedit_char_whitelist=${TESSERACT_RU_WHITELIST}`);
+  }
   if (options?.preserveSpaces !== false) {
     args.push("-c", "preserve_interword_spaces=1");
   }
@@ -53,27 +64,38 @@ export async function runTesseractRu(
   return sanitizeRuOcrText(typeof stdout === "string" ? stdout : "");
 }
 
+export type TesseractTsvOptions = {
+  useWhitelist?: boolean;
+  lang?: string;
+  /** Отбросить слова с conf ниже порога (0–100). */
+  minConf?: number;
+};
+
 /** TSV OCR: координаты слов → восстановление колонок таблиц. */
 export async function runTesseractRuTsv(
   imagePath: string,
   timeoutMs: number,
   psm = "6",
+  options?: TesseractTsvOptions,
 ): Promise<string> {
+  const lang = options?.lang ?? TESSERACT_RU_LANG;
   const args = [
     imagePath,
     "stdout",
     "-l",
-    TESSERACT_RU_LANG,
+    lang,
     "--oem",
     "1",
     "--psm",
     psm,
     "-c",
-    `tessedit_char_whitelist=${TESSERACT_RU_WHITELIST}`,
-    "-c",
     "preserve_interword_spaces=1",
     "tsv",
   ];
+  if (options?.useWhitelist !== false) {
+    // insert before "tsv"
+    args.splice(args.length - 1, 0, "-c", `tessedit_char_whitelist=${TESSERACT_RU_WHITELIST}`);
+  }
 
   const { stdout } = await execFileAsync("tesseract", args, {
     timeout: timeoutMs,
@@ -99,7 +121,7 @@ type TsvWord = {
   text: string;
 };
 
-function parseTsvRow(line: string): TsvWord | null {
+function parseTsvRow(line: string, minConf = 0): TsvWord | null {
   const cols = line.split("\t");
   if (cols.length < 12) return null;
   const level = Number(cols[0]);
@@ -107,7 +129,7 @@ function parseTsvRow(line: string): TsvWord | null {
   const text = (cols[11] ?? "").trim();
   if (!text) return null;
   const conf = Number(cols[10]);
-  if (!Number.isFinite(conf) || conf < 0) return null;
+  if (!Number.isFinite(conf) || conf < minConf) return null;
   return {
     level,
     page: Number(cols[1]) || 0,
@@ -127,11 +149,11 @@ function parseTsvRow(line: string): TsvWord | null {
 /**
  * Собирает текст с выравниванием по X — колонки таблиц не схлопываются в одну кучу.
  */
-export function layoutTextFromTesseractTsv(tsv: string): string {
+export function layoutTextFromTesseractTsv(tsv: string, minConf = 0): string {
   const words: TsvWord[] = [];
   for (const line of tsv.split(/\r?\n/)) {
     if (!line || line.startsWith("level\t")) continue;
-    const word = parseTsvRow(line);
+    const word = parseTsvRow(line, minConf);
     if (word?.text) words.push(word);
   }
   if (words.length === 0) return "";
