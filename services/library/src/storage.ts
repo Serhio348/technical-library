@@ -689,7 +689,7 @@ export async function readExtractedTextMeta(
 export async function listExtractedDocuments(
   root: string,
   slug: string,
-  maxCharsPerDocument = 120_000,
+  maxCharsPerDocument = 500_000,
 ): Promise<ExtractedDocument[]> {
   const installRoot = resolveUnderRoot(root, slug);
   const out: ExtractedDocument[] = [];
@@ -817,7 +817,7 @@ async function scoreExtractedDocument(
   query: string,
   terms: string[],
 ): Promise<SearchHit | null> {
-  const text = await readExtractedText(root, slug, basePath, 120_000);
+  const text = await readExtractedText(root, slug, basePath, 500_000);
   if (!text) return null;
   const name = basePath.split("/").pop() ?? basePath;
   if (!documentMatchesQuery(text, name, query)) return null;
@@ -994,7 +994,7 @@ export async function buildLibraryContextForQuery(
 
   const items: LibraryContextItem[] = [];
   for (const hit of filtered.slice(0, docLimit)) {
-    const fullText = await readExtractedText(root, slug, hit.path, 120_000);
+    const fullText = await readExtractedText(root, slug, hit.path, 500_000);
     if (!fullText) continue;
     const pages = await readExtractedPages(root, slug, hit.path);
     const meta = await readExtractedTextMeta(root, slug, hit.path);

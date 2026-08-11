@@ -127,7 +127,9 @@ export function buildDocumentContext(
 ): string {
   const trimmed = fullText.trim();
   if (!trimmed) return "";
-  if (trimmed.length <= maxChars && !pages?.length) return trimmed;
+  if (trimmed.length <= maxChars && !pages?.length) {
+    return skipLeadingToc(trimmed);
+  }
 
   const terms = mergeQueryTerms(query, options.boostTerms);
   const preferWide = options.preferWide ?? false;
@@ -140,10 +142,75 @@ export function buildDocumentContext(
   }
 
   if (preferWide || terms.length === 0) {
-    return trimmed.slice(0, maxChars);
+    return sliceBodyPreferringChapters(trimmed, maxChars);
   }
 
   return buildFromWindows(trimmed, terms, maxChars);
+}
+
+const TOC_LINE_HINT_RE =
+  /^\d+(?:\.\d+)?\.?\s+\S.{3,100}?\s+\d{1,3}$/;
+
+/** Убирает ведущее оглавление, если оно занимает начало файла. */
+export function skipLeadingToc(text: string): string {
+  const lines = text.split(/\n/);
+  let offset = 0;
+  let tocLines = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    const trimmed = line.trim();
+    if (!trimmed) {
+      offset += line.length + 1;
+      continue;
+    }
+    const isHeading = /^\d+(?:\.\d+)*\.?\s+[А-ЯЁA-Z]/.test(trimmed);
+    const isTocLine = TOC_LINE_HINT_RE.test(trimmed) || (isHeading && trimmed.length < 140);
+    if (isTocLine) {
+      tocLines += 1;
+      offset += line.length + 1;
+      if (tocLines > 120 || offset > 24_000) break;
+      continue;
+    }
+    // После серии пунктов оглавления — тело документа
+    if (tocLines >= 4 && trimmed.length > 40) {
+      return text.slice(offset).trim() || text;
+    }
+    break;
+  }
+
+  if (tocLines >= 4 && offset > 0 && offset < text.length - 200) {
+    return text.slice(offset).trim() || text;
+  }
+
+  // Fallback: компактный префикс (не весь head с телом глав)
+  const prefix = text.slice(0, Math.min(text.length, 2_500));
+  if (!looksLikeTocHeavyText(prefix, 5)) return text;
+
+  const start = Math.min(Math.max(offset, Math.floor(text.length * 0.08)), 24_000);
+  if (start > 0 && start < text.length - 500) {
+    return text.slice(start).trim() || text;
+  }
+  return text;
+}
+
+function sliceBodyPreferringChapters(text: string, maxChars: number): string {
+  const body = skipLeadingToc(text);
+  if (body.length <= maxChars) return body;
+  // Равномерная выборка по документу, а не только начало
+  const chunkSize = Math.max(2_000, Math.floor(maxChars / 4));
+  const step = Math.max(chunkSize, Math.floor(body.length / 4));
+  const parts: string[] = [];
+  let used = 0;
+  for (let i = 0; i < body.length && used < maxChars && parts.length < 6; i += step) {
+    const chunk = body.slice(i, i + chunkSize).trim();
+    if (!chunk) continue;
+    if (looksLikeTocHeavyText(chunk, 1) && i < body.length * 0.2) continue;
+    parts.push(i > 0 ? `... ${chunk}` : chunk);
+    used += chunk.length + 2;
+  }
+  if (parts.length === 0) return body.slice(0, maxChars);
+  return parts.join("\n\n").slice(0, maxChars);
 }
 
 function mergeQueryTerms(query: string, boostTerms: string[] | undefined): string[] {
@@ -257,7 +324,8 @@ function fallbackPageSpread(pages: DocumentPage[], maxChars: number): string {
 }
 
 function buildFromWindows(text: string, terms: string[], maxChars: number): string {
-  const normalized = normalizeForSearch(text);
+  const body = skipLeadingToc(text);
+  const normalized = normalizeForSearch(body);
   const windowRadius = 2200;
   const ranges: Array<{ start: number; end: number; score: number }> = [];
 
@@ -266,16 +334,17 @@ function buildFromWindows(text: string, terms: string[], maxChars: number): stri
     while (idx < normalized.length) {
       const hit = normalized.indexOf(term, idx);
       if (hit < 0) break;
-      ranges.push({
-        start: Math.max(0, hit - windowRadius),
-        end: Math.min(text.length, hit + windowRadius),
-        score: 1,
-      });
+      const start = Math.max(0, hit - windowRadius);
+      const end = Math.min(body.length, hit + windowRadius);
+      const windowText = body.slice(start, end);
+      let score = 1;
+      if (looksLikeTocHeavyText(windowText, 1)) score = 0.15;
+      ranges.push({ start, end, score });
       idx = hit + term.length;
     }
   }
 
-  if (ranges.length === 0) return text.slice(0, maxChars);
+  if (ranges.length === 0) return sliceBodyPreferringChapters(body, maxChars);
 
   ranges.sort((a, b) => b.score - a.score || a.start - b.start);
   const merged = mergeRanges(ranges.map(({ start, end }) => ({ start, end })));
@@ -284,10 +353,11 @@ function buildFromWindows(text: string, terms: string[], maxChars: number): stri
   let used = 0;
   for (const range of merged) {
     if (used >= maxChars) break;
-    const chunk = text.slice(range.start, range.end).trim();
+    const chunk = body.slice(range.start, range.end).trim();
     if (!chunk) continue;
+    if (looksLikeTocHeavyText(chunk, 1) && chunks.length > 0) continue;
     const prefix = range.start > 0 ? "... " : "";
-    const suffix = range.end < text.length ? " ..." : "";
+    const suffix = range.end < body.length ? " ..." : "";
     chunks.push(`${prefix}${chunk}${suffix}`);
     used += chunk.length + 2;
   }

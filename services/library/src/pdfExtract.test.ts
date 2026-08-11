@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { countCyrillicChars, hasUsableTextLayer, looksLikeTocHeavyText, needsOcrFallback, scoreExtractionQuality, shouldRunFullOcr } from "./pdfExtract";
+import {
+  countCyrillicChars,
+  hasUsableTextLayer,
+  looksLikeTocHeavyText,
+  needsOcrFallback,
+  scoreExtractionQuality,
+  shouldRunFullOcr,
+  splitPdfTextIntoPages,
+} from "./pdfExtract";
 
 describe("pdf OCR quality gate", () => {
   it("requests OCR for empty or very short text", () => {
@@ -50,6 +58,18 @@ describe("pdf OCR quality gate", () => {
     expect(looksLikeTocHeavyText(tkpToc, 40)).toBe(true);
   });
 
+  it("forces OCR for long TOC-only layers that previously skipped OCR", () => {
+    const toc =
+      "1. ВВЕДЕНИЕ 1 2. НАЗНАЧЕНИЕ 2 3. ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ 3 4. КОМПЛЕКТАЦИЯ 4 " +
+      "5. МОНТАЖ 5 6. ЭКСПЛУАТАЦИЯ 6 7. ТЕХОБСЛУЖИВАНИЕ 7 8. ПОРЯДОК МОНТАЖА 8 " +
+      "9. БЕЗОПАСНОСТЬ 9 10. ИЗВЛЕЧЕНИЕ ЭЛЕМЕНТОВ 10 11. ПРИЛОЖЕНИЕ 11 12. СПИСОК 12 ";
+    const longToc = toc.repeat(50);
+    expect(longToc.length).toBeGreaterThan(10_000);
+    expect(looksLikeTocHeavyText(longToc, 80)).toBe(true);
+    expect(hasUsableTextLayer(longToc, 80)).toBe(false);
+    expect(shouldRunFullOcr(longToc, 80)).toBe(true);
+  });
+
   it("scores body text higher than toc-only layer", () => {
     const toc = "8. ПОРЯДОК МОНТАЖА 8 10. ИЗВЛЕЧЕНИЕ 10";
     const body = "Первый запуск. Проверьте давление. Запустите насос. ".repeat(30);
@@ -66,5 +86,13 @@ describe("pdf OCR quality gate", () => {
     const body = "Правила технической эксплуатации электроустановок. ".repeat(120);
     expect(hasUsableTextLayer(body, 344)).toBe(true);
     expect(shouldRunFullOcr(body, 344)).toBe(false);
+  });
+
+  it("splits pdftotext form-feed output into pages", () => {
+    const raw = "Страница один с текстом главы.\fСтраница два продолжение раздела.\fСтраница три.";
+    const pages = splitPdfTextIntoPages(raw);
+    expect(pages).toHaveLength(3);
+    expect(pages[0]?.page).toBe(1);
+    expect(pages[1]?.text).toContain("два");
   });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildDocumentContext, documentMatchesQuery, extractSectionBoostTerms, queryTerms } from "./documentSearch";
+import {
+  buildDocumentContext,
+  documentMatchesQuery,
+  extractSectionBoostTerms,
+  queryTerms,
+  skipLeadingToc,
+} from "./documentSearch";
 import {
   countCyrillicChars,
   looksLikeTocHeavyText,
@@ -79,5 +85,28 @@ describe("documentSearch", () => {
         "первый запуск",
       ),
     ).toBe(true);
+  });
+
+  it("skips leading table of contents when building context without pages", () => {
+    const toc = [
+      "1. ВВЕДЕНИЕ 1",
+      "2. НАЗНАЧЕНИЕ 2",
+      "3. ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ 3",
+      "4. КОМПЛЕКТАЦИЯ 4",
+      "5. МОНТАЖ 5",
+      "6. ЭКСПЛУАТАЦИЯ 6",
+      "7. ТЕХОБСЛУЖИВАНИЕ 7",
+      "8. ПОРЯДОК МОНТАЖА 8",
+    ].join("\n");
+    const body =
+      "Перед первым запуском установки проверьте давление на входе и откройте кран подачи воды. ".repeat(
+        8,
+      );
+    const full = `${toc}\n\n${body}`;
+    expect(skipLeadingToc(full)).toContain("первым запуском");
+    expect(skipLeadingToc(full)).not.toMatch(/^1\. ВВЕДЕНИЕ/);
+
+    const ctx = buildDocumentContext(full, "первый запуск", 500, null, { preferWide: true });
+    expect(ctx).toContain("первым запуском");
   });
 });

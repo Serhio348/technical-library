@@ -65,7 +65,7 @@ export function assessPdfIndexStatus(
   if (sparseLayer) {
     return {
       source_pages: sourcePages,
-      indexed_pages: 0,
+      indexed_pages: indexedPages,
       index_status: "partial",
       index_note: "Текстовый слой PDF (часто только оглавление). Нужен полный OCR — переиндексируйте (↻).",
     };
@@ -78,13 +78,18 @@ export function assessPdfIndexStatus(
   ) {
     return {
       source_pages: sourcePages,
-      indexed_pages: 0,
+      indexed_pages: indexedPages,
       index_status: "partial",
       index_note: "В индексе похоже только оглавление. Переиндексируйте файл (↻) для полного OCR.",
     };
   }
 
-  return { source_pages: sourcePages, indexed_pages: 0, index_status: "ready", index_note: null };
+  return {
+    source_pages: sourcePages,
+    indexed_pages: indexedPages || (result.text ? Math.max(sourcePages, 1) : 0),
+    index_status: "ready",
+    index_note: null,
+  };
 }
 
 /** Статус для UI/API по сохранённым sidecar (в т.ч. старые meta без index_status). */
