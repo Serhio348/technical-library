@@ -7,7 +7,8 @@ import type { DocumentPage } from "./documentSearch.js";
 import { env } from "./config.js";
 import { reportIndexJobOcrPage } from "./indexJobContext.js";
 import { withOcrLock } from "./ocrLock.js";
-import { runTesseractRu, sanitizeRuOcrText } from "./tesseractRu.js";
+import { runTesseractRu, runTesseractRuTsv, layoutTextFromTesseractTsv, sanitizeRuOcrText } from "./tesseractRu.js";
+import { extractPdfTablesMarkdown, mergeTablesIntoPages } from "./pdfTables.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,12 +39,12 @@ export type PdfExtractionResult = {
   source_pages: number;
 };
 
-/** Сохраняет переносы строк — иначе детектор оглавления ТКП/ГОСТ ломается. */
+/** Сохраняет переносы и пробелы колонок таблиц (не схлопывать 2+ пробела). */
 function normalizePageText(raw: string): string {
   return sanitizeRuOcrText(raw)
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
-    .replace(/[^\S\n]+/g, " ")
+    .replace(/[^\S\n ]+/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -315,8 +316,16 @@ async function renderPdfPage(
   return name ? join(outDir, name) : null;
 }
 
-async function ocrImage(imagePath: string, timeoutMs: number, psm = "3"): Promise<string> {
-  return runTesseractRu(imagePath, timeoutMs, psm, { preserveSpaces: false });
+async function ocrImage(imagePath: string, timeoutMs: number, psm = "6"): Promise<string> {
+  // PSM 6 = единый блок текста — лучше для таблиц/ТКП, чем авто-сегментация (3)
+  try {
+    const tsv = await runTesseractRuTsv(imagePath, timeoutMs, psm);
+    const laidOut = layoutTextFromTesseractTsv(tsv);
+    if (laidOut.length >= 40) return laidOut;
+  } catch {
+    // fallback to plain OCR below
+  }
+  return runTesseractRu(imagePath, timeoutMs, psm, { preserveSpaces: true });
 }
 
 export { extractTextFromImageBuffer, isPhotoOcrUsable } from "./imageOcr.js";
@@ -383,36 +392,48 @@ export async function extractPdfWithFallback(
   filePath: string,
   options?: { forceOcr?: boolean },
 ): Promise<PdfExtractionResult> {
+  const [layer, tables] = await Promise.all([
+    extractPdfTextLayer(filePath),
+    extractPdfTablesMarkdown(filePath, {
+      maxPages: env.LIBRARY_OCR_MAX_PAGES,
+      timeoutMs: 180_000,
+    }),
+  ]);
   const {
-    text: parsed,
+    text: parsedRaw,
     pageCount,
     extractor: textExtractor,
-    pages: textPages,
-  } = await extractPdfTextLayer(filePath);
+    pages: textPagesRaw,
+  } = layer;
+  // OCR-решение по «сырому» тексту без markdown-таблиц (иначе TOC+tables ложно кажется полным)
+  const needsOcr = shouldRunFullOcr(parsedRaw, pageCount);
+  const textMerged = mergeTablesIntoPages(textPagesRaw, tables, parsedRaw);
+  const parsed = textMerged.text ? textMerged.text.slice(0, MAX_EXTRACTED_CHARS) : null;
+  const textPages = textMerged.pages;
 
   if (options?.forceOcr) {
     const ocr = await extractPdfTextWithOcrDetailed(filePath);
     if (ocr.text) {
       const ocrScore = scoreExtractionQuality(ocr.text, pageCount);
-      const textScore = scoreExtractionQuality(parsed, pageCount);
-      // Принудительный OCR — берём его, если не хуже текстового слоя заметно
-      if (!parsed || ocrScore >= textScore * 0.7) {
+      const textScore = scoreExtractionQuality(parsedRaw, pageCount);
+      if (!parsedRaw || ocrScore >= textScore * 0.7) {
+        const merged = mergeTablesIntoPages(ocr.pages, tables, ocr.text);
         return {
-          text: ocr.text,
+          text: merged.text ? merged.text.slice(0, MAX_EXTRACTED_CHARS) : null,
           extractor: "tesseract-ocr",
           confidence: 0.65,
-          pages: ocr.pages,
+          pages: merged.pages,
           source_pages: pageCount,
         };
       }
     }
   }
 
-  if (!shouldRunFullOcr(parsed, pageCount)) {
+  if (!needsOcr) {
     return {
       text: parsed,
       extractor: textExtractor,
-      confidence: hasUsableTextLayer(parsed, pageCount) ? 0.85 : 0.75,
+      confidence: hasUsableTextLayer(parsedRaw, pageCount) ? 0.85 : 0.75,
       pages: textPages,
       source_pages: pageCount,
     };
@@ -421,9 +442,8 @@ export async function extractPdfWithFallback(
   const ocr = await extractPdfTextWithOcrDetailed(filePath);
   if (ocr.text) {
     const ocrScore = scoreExtractionQuality(ocr.text, pageCount);
-    const textScore = scoreExtractionQuality(parsed, pageCount);
-    // Если OCR слабее плотного текстового слоя — оставляем слой, но с pages
-    if (parsed && textScore > ocrScore * 1.25 && hasUsableTextLayer(parsed, pageCount)) {
+    const textScore = scoreExtractionQuality(parsedRaw, pageCount);
+    if (parsedRaw && textScore > ocrScore * 1.25 && hasUsableTextLayer(parsedRaw, pageCount)) {
       return {
         text: parsed,
         extractor: textExtractor,
@@ -432,11 +452,12 @@ export async function extractPdfWithFallback(
         source_pages: pageCount,
       };
     }
+    const merged = mergeTablesIntoPages(ocr.pages, tables, ocr.text);
     return {
-      text: ocr.text,
+      text: merged.text ? merged.text.slice(0, MAX_EXTRACTED_CHARS) : null,
       extractor: "tesseract-ocr",
       confidence: 0.65,
-      pages: ocr.pages,
+      pages: merged.pages,
       source_pages: pageCount,
     };
   }

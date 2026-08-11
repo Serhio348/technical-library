@@ -35,7 +35,7 @@ export function scorePhotoOcrQuality(text: string): number {
   const cyrillic = countCyrillicChars(cleaned);
   const latin = (cleaned.match(/[A-Za-z]/g) ?? []).length;
   const digits = (cleaned.match(/\d/g) ?? []).length;
-  const weird = (cleaned.match(/[^\n\r\t A-Za-zА-Яа-яЁё0-9.,:;!?\-–—«»"'()\/\\%+№§°]/g) ?? []).length;
+  const weird = (cleaned.match(/[^\n\r\t A-Za-zА-Яа-яЁё0-9.,:;!?\-–—«»"'()\/\\%+№§°|=_\[\]{}*<>~]/g) ?? []).length;
   const lower = cleaned.toLowerCase();
 
   let score =
