@@ -26,10 +26,16 @@ RUN apk add --no-cache \
     tesseract-ocr-data-rus \
     tesseract-ocr-data-eng \
     poppler-utils \
-    imagemagick
+    imagemagick \
+    python3 \
+    py3-pip \
+    py3-pillow \
+  && pip3 install --no-cache-dir --break-system-packages pdfplumber \
+  && ln -sf /usr/bin/python3 /usr/local/bin/python
 COPY services/library/package.json services/library/package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY services/library/scripts ./scripts
 COPY --from=web /web/dist ./web
 EXPOSE 3021
 CMD ["node", "dist/index.js"]
