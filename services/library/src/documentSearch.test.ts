@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDocumentContext,
   documentMatchesQuery,
+  extractScopeBoostTerms,
   extractSectionBoostTerms,
   queryTerms,
   skipLeadingToc,
@@ -55,6 +56,13 @@ describe("documentSearch", () => {
   it("extracts section numbers from query", () => {
     const terms = extractSectionBoostTerms("Что в разделе 14 про накопительные баки?");
     expect(terms.some((t) => t.includes("14"))).toBe(true);
+  });
+
+  it("extracts ЗРУ scope boost terms", () => {
+    const terms = extractScopeBoostTerms(
+      "требования к месту присоединения переносного заземления к токоведущим частям в ЗРУ",
+    );
+    expect(terms).toEqual(expect.arrayContaining(["зру", "токоведущие"]));
   });
 
   it("expands startup query terms", () => {

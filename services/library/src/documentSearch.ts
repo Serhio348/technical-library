@@ -30,6 +30,35 @@ export function extractSectionBoostTerms(query: string): string[] {
   return [...new Set(terms)];
 }
 
+/**
+ * Область применения из вопроса (ЗРУ/ОРУ/ВЛ…) — чтобы контекст и ответ
+ * не подменялись общими нормами «для всех электроустановок».
+ */
+export function extractScopeBoostTerms(query: string): string[] {
+  const q = query.toLowerCase().replace(/ё/g, "е");
+  const terms: string[] = [];
+  const add = (...items: string[]) => {
+    for (const item of items) terms.push(item);
+  };
+
+  const hasAbbr = (abbr: string) => new RegExp(`(?:^|[^a-zа-яё0-9])${abbr}(?=[^a-zа-яё0-9]|$)`, "i").test(q);
+  if (hasAbbr("зру") || /закрыт[а-яё]*\s+распределительн/.test(q)) {
+    add("зру", "закрытом распределительном", "закрытых распределительных", "в зру");
+  }
+  if (hasAbbr("ору") || /открыт[а-яё]*\s+распределительн/.test(q)) {
+    add("ору", "открытом распределительном", "открытых распределительных", "в ору");
+  }
+  if (hasAbbr("вру")) add("вру", "в вру");
+  if (hasAbbr("вл") || /воздушн[а-яё]*\s+лини/.test(q)) add("вл", "воздушной линии", "воздушных линий");
+  if (hasAbbr("кл") || /кабельн[а-яё]*\s+лини/.test(q)) add("кл", "кабельной линии", "кабельных линий");
+  if (hasAbbr("тп") || /трансформаторн[а-яё]*\s+подстан/.test(q)) add("тп", "трансформаторной подстанции");
+  if (/токоведущ/.test(q)) add("токоведущие", "токоведущих", "токоведущим");
+  if (/переносн\w*\s+заземл|заземлен/.test(q)) add("заземления", "переносных заземлений", "присоединения");
+  if (/рабоч\w*\s+мест/.test(q)) add("рабочем месте", "рабочего места");
+
+  return [...new Set(terms)];
+}
+
 const STOP_WORDS = new Set([
   "какие",
   "какой",
