@@ -837,6 +837,16 @@ async function scoreExtractedDocument(
       return sum + count;
     }, 0);
 
+  // Упоминание имени/автора/номера в вопросе → сильно поднимаем файл
+  const nameNorm = name.toLowerCase().replace(/ё/g, "е");
+  for (const term of terms) {
+    if (term.length >= 4 && nameNorm.includes(term)) score += 80;
+  }
+  const qNorm = query.toLowerCase().replace(/ё/g, "е");
+  for (const token of nameNorm.split(/[^a-zа-я0-9.]+/).filter((t) => t.length >= 4)) {
+    if (qNorm.includes(token)) score += 40;
+  }
+
   const meta = await readExtractedTextMeta(root, slug, basePath);
   if (meta?.index_status === "partial") score *= 0.85;
 
@@ -971,8 +981,9 @@ export async function buildLibraryContextForQuery(
   }
 
   let scopeFileCount = 0;
+  let scopeFiles: string[] = [];
   if (scopePath) {
-    const scopeFiles = await listIndexableFiles(root, slug, scopePath);
+    scopeFiles = await listIndexableFiles(root, slug, scopePath);
     scopeFileCount = scopeFiles.length;
     if (filtered.length === 0 && scopeFiles.length > 0) {
       filtered = scopeFiles.map((path) => ({
@@ -986,11 +997,33 @@ export async function buildLibraryContextForQuery(
 
   const preferWide =
     options.prefer_wide_context ??
-    ((scopeFileCount > 0 && scopeFileCount <= 3) || filtered.length <= 2);
+    ((scopeFileCount > 0 && scopeFileCount <= 6) || filtered.length <= 3);
   contextOptions.preferWide = preferWide;
 
-  const charsPerDoc = preferWide ? Math.max(maxCharsPerDocument, 80_000) : maxCharsPerDocument;
-  const docLimit = preferWide ? Math.min(maxDocuments, 2) : maxDocuments;
+  // Не режем до 2 документов: иначе 3–4-й файл в папке ТКП никогда не попадает в ответ
+  const charsPerDoc = preferWide ? Math.max(maxCharsPerDocument, 60_000) : maxCharsPerDocument;
+  const docLimit = Math.min(Math.max(maxDocuments, preferWide ? 4 : maxDocuments), 6);
+
+  // Если в scope мало файлов — подмешиваем остальные файлы папки (после поисковых хитов)
+  if (scopePath && scopeFileCount > 0 && scopeFileCount <= 8) {
+    const have = new Set(filtered.map((h) => h.path));
+    const terms = queryTerms(query);
+    for (const path of scopeFiles) {
+      if (have.has(path)) continue;
+      const name = path.split("/").pop() ?? path;
+      const nameHit = await scoreExtractedDocument(root, slug, path, query, terms);
+      filtered.push(
+        nameHit ?? {
+          path,
+          name,
+          snippet: "",
+          score: 0.5,
+        },
+      );
+      have.add(path);
+    }
+    filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "ru"));
+  }
 
   const items: LibraryContextItem[] = [];
   for (const hit of filtered.slice(0, docLimit)) {

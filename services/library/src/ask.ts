@@ -160,10 +160,11 @@ async function fetchContext(
   mode: AskMode,
   boostTerms: string[] = [],
 ): Promise<LibraryContextItem[]> {
+  // Раньше maxDocuments=2 — бот «не видел» 3–4-й файл в папке ТКП
   if (mode === "preview") {
     return buildLibraryContextForQuery(root, slug, question, {
-      maxCharsPerDocument: 4_000,
-      maxDocuments: 2,
+      maxCharsPerDocument: 5_000,
+      maxDocuments: 4,
       scope_path: scopePath,
       prefer_wide_context: false,
       boost_terms: boostTerms,
@@ -171,8 +172,8 @@ async function fetchContext(
   }
 
   return buildLibraryContextForQuery(root, slug, question, {
-    maxCharsPerDocument: 100_000,
-    maxDocuments: 2,
+    maxCharsPerDocument: 80_000,
+    maxDocuments: 4,
     scope_path: scopePath,
     prefer_wide_context: true,
     boost_terms: boostTerms,
