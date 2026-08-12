@@ -219,16 +219,19 @@ export function ChatPanel({
       if (result.needs_clarification) {
         setComposerHint("Уточните вопрос текстом или пришлите более чёткое фото — фильтр по файлу сохранён.");
         window.setTimeout(() => setComposerHint(null), 6000);
-      } else if (result.recognized_question) {
+      } else if (result.normalized_question || result.recognized_question) {
+        const shown = result.normalized_question ?? result.recognized_question ?? "";
         const prefix =
-          isImage && result.ocr_confidence === "low"
-            ? "Распознано с фото (неуверенно)"
-            : isImage
-              ? "Распознано с фото"
-              : "Из файла";
-        setComposerHint(
-          `${prefix}: ${result.recognized_question.slice(0, 120)}${result.recognized_question.length > 120 ? "…" : ""}`,
-        );
+          isImage && result.ocr_pipeline === "tesseract+normalize"
+            ? result.ocr_confidence === "low"
+              ? "Восстановлено с фото (неуверенно)"
+              : "Восстановлено с фото"
+            : isImage && result.ocr_confidence === "low"
+              ? "Распознано с фото (неуверенно)"
+              : isImage
+                ? "Распознано с фото"
+                : "Из файла";
+        setComposerHint(`${prefix}: ${shown.slice(0, 120)}${shown.length > 120 ? "…" : ""}`);
         window.setTimeout(() => setComposerHint(null), 5000);
       }
     } catch (e) {
