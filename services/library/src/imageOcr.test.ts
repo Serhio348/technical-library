@@ -58,7 +58,11 @@ describe("photo OCR cleanup", () => {
     const messy =
       "Токоведущие части были?\n1. Когда потенциал.\n2. Во всех случаях.\n" +
       "а а а б б в в г г д д е е ж ж";
-    expect(isPhotoOcrDoubtful(messy) || scorePhotoOcrQuality(messy) < 120).toBe(true);
+    // Средний шум при структуре теста — больше не режем как «плохое фото»
+    expect(isPhotoOcrDoubtful(messy)).toBe(false);
+
+    const garbageOnly = "а а б б в в ехох эвовов титаиний = = ЕЕ";
+    expect(isPhotoOcrUsable(garbageOnly)).toBe(false);
 
     const clearQuiz =
       "Вопрос № 5 из 23\nРазрешается ли надевать, снимать и поправлять на ходу приводные ремни теплоустановок?\n" +

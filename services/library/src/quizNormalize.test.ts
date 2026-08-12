@@ -3,6 +3,7 @@ import {
   formatNormalizedQuiz,
   looksLikeQuizText,
   parseNormalizedQuizJson,
+  quizOcrLooksCleanEnough,
 } from "./quizNormalize.js";
 
 describe("looksLikeQuizText", () => {
@@ -51,6 +52,34 @@ describe("parseNormalizedQuizJson", () => {
     );
     expect(quiz?.needs_clarification).toBe(true);
     expect(quiz?.confidence).toBe("low");
+  });
+
+  it("does not block when question and options recovered despite low flag", () => {
+    const quiz = parseNormalizedQuizJson(
+      JSON.stringify({
+        question: "Какие требования к месту присоединения в ЗРУ?",
+        options: [
+          { key: "1", text: "Все перечисленное" },
+          { key: "2", text: "Только освещение" },
+        ],
+        confidence: "low",
+        needs_clarification: true,
+      }),
+    );
+    expect(quiz?.needs_clarification).toBe(false);
+    expect(quiz?.confidence).toBe("ok");
+  });
+});
+
+describe("quizOcrLooksCleanEnough", () => {
+  it("skips LLM normalize for already clean MCQ OCR", () => {
+    const clean =
+      "Какие требования к месту присоединения переносного заземления в ЗРУ?\n" +
+      "1) Все, что указано в других вариантах ответа.\n" +
+      "2) Место должно освещаться лампами внутреннего освещения ЗРУ.\n" +
+      "3) Только при наличии защитных средств.";
+    expect(quizOcrLooksCleanEnough(clean)).toBe(true);
+    expect(quizOcrLooksCleanEnough("Что такое электротравма?")).toBe(false);
   });
 });
 

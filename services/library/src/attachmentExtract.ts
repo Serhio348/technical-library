@@ -50,7 +50,7 @@ export async function extractTextFromAskAttachment(
   const lower = filename.toLowerCase();
 
   if (isImageAttachmentFilename(lower)) {
-    return extractTextFromImageBuffer(buffer);
+    return extractTextFromImageBuffer(buffer, { fast: true, timeoutMs: 45_000 });
   }
 
   if (lower.endsWith(".docx")) {

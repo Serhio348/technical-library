@@ -33,7 +33,8 @@ const NORMALIZE_SYSTEM = `Ты восстанавливаешь текст эк�
 - Сохрани нумерацию/буквы вариантов как в исходнике (1/2/3 или а/б/в).
 - Если строки таблицы OCR «поехали» — аккуратно слей обрывки в целые варианты.
 - scope — только если явно следует из текста (ЗРУ, ОРУ, ВЛ, рабочее место…).
-- needs_clarification=true и confidence=low, если вопрос или варианты нечитаемы / явно обрезаны.
+- needs_clarification=true только если вопрос или варианты почти нечитаемы (не из‑за мелкого шума OCR).
+- Если вопрос и ≥2 варианта восстановимы — confidence=ok, needs_clarification=false.
 - Пиши по-русски, как в исходнике.`;
 
 /** Похоже на тест с вариантами (в т.ч. после кривого OCR таблицы). */
@@ -49,6 +50,26 @@ export function looksLikeQuizText(text: string): boolean {
   const optLines = lines.filter((l) => /^(?:[1-9]|[a-dа-г])(?:[.)]|\s)/i.test(l));
   if (optLines.length >= 2) return true;
   return false;
+}
+
+/**
+ * OCR уже достаточно ровный для поиска — без второго вызова DeepSeek.
+ * Экономит несколько секунд на типичном скрине теста.
+ */
+export function quizOcrLooksCleanEnough(text: string): boolean {
+  const t = text.trim();
+  if (!looksLikeQuizText(t)) return false;
+  const lines = t.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const optLines = lines.filter((l) => /^(?:[1-9]|[a-dа-г])(?:[.)]|\s)\s*\S{3,}/i.test(l));
+  if (optLines.length < 2) return false;
+  // Есть «тело» вопроса вне вариантов
+  const nonOpt = lines.filter((l) => !/^(?:[1-9]|[a-dа-г])(?:[.)]|\s)/i.test(l) && l.length >= 20);
+  if (nonOpt.length === 0) return false;
+  // Не слишком много совсем коротких обрывков
+  const tokens = t.split(/\s+/).filter(Boolean);
+  const tiny = tokens.filter((w) => /^[А-Яа-яЁёA-Za-z]{1,2}$/.test(w)).length;
+  if (tokens.length >= 20 && tiny / tokens.length >= 0.35) return false;
+  return true;
 }
 
 export function formatNormalizedQuiz(quiz: Omit<NormalizedQuiz, "formatted" | "rawModel">): string {
@@ -100,17 +121,22 @@ export function parseNormalizedQuizJson(raw: string): NormalizedQuiz | null {
   }
 
   const confidence = obj.confidence === "low" ? "low" : "ok";
-  const needsClarification = obj.needs_clarification === true || confidence === "low";
   const scope =
     typeof obj.scope === "string" && obj.scope.trim() && obj.scope.trim().toLowerCase() !== "null"
       ? obj.scope.trim()
       : null;
 
+  const hasEnough = question.length >= 15 && options.length >= 2;
+  // Не блокируем ответ, если стек+варианты уже восстановились
+  const needsClarification = hasEnough
+    ? false
+    : obj.needs_clarification === true || confidence === "low";
+
   const base = {
     question,
     options,
     scope,
-    confidence: confidence as "ok" | "low",
+    confidence: (hasEnough ? "ok" : confidence) as "ok" | "low",
     needs_clarification: needsClarification,
   };
 
@@ -147,7 +173,7 @@ export async function normalizeQuizFromOcr(
   ];
 
   try {
-    const raw = await chatCompletion(messages, 900);
+    const raw = await chatCompletion(messages, 700);
     return parseNormalizedQuizJson(raw);
   } catch (e) {
     console.warn("[quizNormalize] failed:", e instanceof Error ? e.message : e);
