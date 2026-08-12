@@ -484,7 +484,8 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     try {
       const items = await buildLibraryContextForQuery(root, slug, q, {
         maxCharsPerDocument: maxChars,
-        maxDocuments: 4,
+        maxDocuments: 0,
+        totalCharsBudget: Math.min(200_000, maxChars * 8),
         folders,
         documents,
         doc_types: docTypes.filter(isValidDocumentType),
