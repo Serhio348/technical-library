@@ -25,6 +25,8 @@ describe("documentCatalog", () => {
   it("matches path and alias filters", () => {
     const entry = inferCatalogEntry("ohrana-truda/Инструкция по СИЗ.pdf");
     expect(catalogEntryMatchesPath(entry, "Инструкция по СИЗ.pdf")).toBe(true);
+    expect(catalogEntryMatchesPath(entry, "ohrana-truda/Инструкция по СИЗ.pdf")).toBe(true);
+    expect(catalogEntryMatchesPath(entry, "other.pdf")).toBe(false);
     expect(catalogEntryMatchesAlias(entry, "инструкция")).toBe(true);
   });
 });

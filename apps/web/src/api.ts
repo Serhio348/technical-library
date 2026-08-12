@@ -47,6 +47,7 @@ export async function askQuestion(
   history: ChatMessage[] = [],
   mode: "preview" | "full" = "preview",
   attachment?: File | null,
+  documents: string[] = [],
 ): Promise<AskResponse> {
   const path = `/api/library/directions/${encodeURIComponent(slug)}/ask`;
   const historyPayload = history.map((m) => ({ role: m.role, content: m.content }));
@@ -57,6 +58,7 @@ export async function askQuestion(
     form.set("scope_path", scopePath);
     form.set("history", JSON.stringify(historyPayload));
     form.set("mode", mode);
+    if (documents.length > 0) form.set("documents", JSON.stringify(documents));
     const isImage = attachment.type.startsWith("image/") || /\.(jpe?g|png)$/i.test(attachment.name);
     form.set(isImage ? "image" : "document", attachment);
     return api(path, { method: "POST", form });
@@ -69,13 +71,20 @@ export async function askQuestion(
       scope_path: scopePath,
       history: historyPayload,
       mode,
+      ...(documents.length > 0 ? { documents } : {}),
     },
   });
 }
 
-export async function fetchSearch(slug: string, query: string, scopePath = ""): Promise<SearchHit[]> {
+export async function fetchSearch(
+  slug: string,
+  query: string,
+  scopePath = "",
+  documents: string[] = [],
+): Promise<SearchHit[]> {
   const params = new URLSearchParams({ q: query });
   if (scopePath) params.set("scope_path", scopePath);
+  if (documents.length > 0) params.set("documents", documents.join(","));
   const data = await api<{ items?: SearchHit[] }>(
     `/api/library/directions/${encodeURIComponent(slug)}/search?${params}`,
   );

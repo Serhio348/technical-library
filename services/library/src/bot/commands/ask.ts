@@ -53,12 +53,23 @@ export async function runAsk(
       : `📄 Читаю ${attachmentKindLabel(attachment!.filename)} и ищу в документах…`
     : mode === "full"
       ? "Формирую подробный ответ…"
-      : "Ищу раздел в документах…";
+      : session.documentPath
+        ? `Ищу в файле «${session.documentPath.split("/").pop()}»…`
+        : "Ищу раздел в документах…";
   await ctx.reply(status);
 
   try {
     const history = mode === "full" ? session.askHistory : [];
-    const result = await askLibrary(session.slug, q, session.scopePath, history, mode, attachment);
+    const documents = session.documentPath ? [session.documentPath] : [];
+    const result = await askLibrary(
+      session.slug,
+      q,
+      session.scopePath,
+      history,
+      mode,
+      attachment,
+      documents,
+    );
 
     const resolvedQuestion = result.resolved_question ?? q;
     const userHistoryContent = result.recognized_question

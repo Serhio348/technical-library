@@ -1040,7 +1040,7 @@ function DirectionView({
           </div>
         </div>
 
-        <DocumentSearch slug={direction.slug} scopePath={currentPath} />
+        <DocumentSearch slug={direction.slug} scopePath={currentPath} files={tree.files} />
 
         <IndexProgressPanel jobs={indexJobs} />
 
@@ -1153,6 +1153,7 @@ function DirectionView({
             slug={direction.slug}
             scopePath={currentPath}
             directionTitle={direction.title}
+            files={tree.files}
             llmConfigured={llmConfigured}
             onClose={onToggleChat}
           />

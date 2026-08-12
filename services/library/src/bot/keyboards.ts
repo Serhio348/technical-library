@@ -3,6 +3,7 @@ import { resolvedTelegramWebAppUrl } from "../config.js";
 
 export const BTN_DIRECTION = "📚 Направление";
 export const BTN_FOLDER = "📁 Папка";
+export const BTN_FILE = "📄 Файл";
 export const BTN_SEARCH = "🔍 Поиск";
 export const BTN_ASK = "💬 Вопрос ИИ";
 export const BTN_VOICE_HELP = "🎤 Набор голосом";
@@ -13,6 +14,7 @@ export const BTN_SHOW = "📖 Подробный ответ";
 export const MENU_BUTTONS = new Set([
   BTN_DIRECTION,
   BTN_FOLDER,
+  BTN_FILE,
   BTN_SEARCH,
   BTN_ASK,
   BTN_VOICE_HELP,
@@ -23,7 +25,7 @@ export const MENU_BUTTONS = new Set([
 export function mainKeyboard() {
   const webAppUrl = resolvedTelegramWebAppUrl();
   const rows: Array<Array<string | ReturnType<typeof Markup.button.webApp>>> = [
-    [BTN_DIRECTION, BTN_FOLDER],
+    [BTN_DIRECTION, BTN_FOLDER, BTN_FILE],
     [BTN_SEARCH, BTN_ASK],
   ];
 

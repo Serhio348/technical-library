@@ -1029,6 +1029,26 @@ code {
   margin-bottom: 0.85rem;
 }
 
+.tl-search__file-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.tl-search__file-filter select {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font: inherit;
+}
+
 .tl-search__bar {
   display: flex;
   align-items: center;
@@ -1327,6 +1347,25 @@ code {
   margin: 0.25rem 0 0;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.tl-chat__file-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.65rem 1rem 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.tl-chat__file-filter select {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--surface-2, rgba(0, 0, 0, 0.25));
+  color: inherit;
+  font: inherit;
 }
 
 .tl-chat__notice {

@@ -159,9 +159,10 @@ async function fetchContext(
   scopePath: string,
   mode: AskMode,
   boostTerms: string[] = [],
+  documents: string[] = [],
 ): Promise<LibraryContextItem[]> {
   // Без лимита «только N файлов»: упаковка по суммарному бюджету символов.
-  // Папка из 8 PDF и рост библиотеки — все релевантные файлы участвуют, пока хватает бюджета.
+  // documents[] — явное ограничение «искать только в этих файлах».
   if (mode === "preview") {
     return buildLibraryContextForQuery(root, slug, question, {
       maxCharsPerDocument: 6_000,
@@ -170,6 +171,7 @@ async function fetchContext(
       scope_path: scopePath,
       prefer_wide_context: false,
       boost_terms: boostTerms,
+      documents,
     });
   }
 
@@ -180,12 +182,17 @@ async function fetchContext(
     scope_path: scopePath,
     prefer_wide_context: true,
     boost_terms: boostTerms,
+    documents,
   });
 }
 
 export function isAskConfigured(): boolean {
   return isDeepSeekConfigured();
 }
+
+export type AskOptions = {
+  documents?: string[];
+};
 
 export async function answerLibraryQuestion(
   root: string,
@@ -195,6 +202,7 @@ export async function answerLibraryQuestion(
   history: unknown = [],
   mode: AskMode = "preview",
   attachment?: AskAttachment | null,
+  options: AskOptions = {},
 ): Promise<AskResult> {
   if (!isDeepSeekConfigured()) {
     throw new Error("deepseek_not_configured");
@@ -215,6 +223,10 @@ export async function answerLibraryQuestion(
   const q = [question.trim(), extractedFromAttachment?.trim()].filter(Boolean).join("\n\n");
   if (!q) throw new Error("empty_question");
 
+  const documents = (options.documents ?? [])
+    .map((d) => d.trim().replace(/\\/g, "/"))
+    .filter(Boolean);
+
   const scopeLabels = detectQuestionScopeLabels(q);
   const boostTerms = [
     ...extractScopeBoostTerms(q),
@@ -222,19 +234,25 @@ export async function answerLibraryQuestion(
     ...scopeLabels,
   ];
 
-  const items = await fetchContext(root, slug, q, scopePath, mode, boostTerms);
+  const items = await fetchContext(root, slug, q, scopePath, mode, boostTerms, documents);
   const contextBlock = formatContext(items);
   const attachmentNote = attachmentFilename
     ? ` (из прикреплённого ${attachmentKindLabel(attachmentFilename)}${attachmentFilename ? `: ${attachmentFilename}` : ""})`
     : "";
+  const docFilterNote =
+    documents.length === 1
+      ? `\n\nИскать ТОЛЬКО в указанном файле: ${documents[0]}.`
+      : documents.length > 1
+        ? `\n\nИскать ТОЛЬКО в указанных файлах:\n${documents.map((d) => `• ${d}`).join("\n")}`
+        : "";
   const scopeBlock =
     scopeLabels.length > 0
       ? `\n\nВАЖНО — область вопроса (не расширять): ${scopeLabels.join(", ")}. Отвечай только в этих рамках.`
       : "";
   const userContent =
     mode === "preview"
-      ? `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${scopeBlock}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
-      : `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${scopeBlock}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
+      ? `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
+      : `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: mode === "preview" ? PREVIEW_SYSTEM_PROMPT : FULL_SYSTEM_PROMPT },

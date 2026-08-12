@@ -20,7 +20,8 @@ export async function runSearchQuery(ctx: Context, query: string): Promise<void>
   await ctx.reply("🔍 Ищу…");
 
   try {
-    const hits = await searchLibrary(session.slug, q, session.scopePath);
+    const documents = session.documentPath ? [session.documentPath] : [];
+    const hits = await searchLibrary(session.slug, q, session.scopePath, documents);
     if (hits.length === 0) {
       await ctx.reply("Ничего не найдено. Проверьте, что у файлов в веб-интерфейсе есть метка ИИ.", mainKeyboard());
       return;
