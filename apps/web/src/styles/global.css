@@ -1368,6 +1368,11 @@ code {
   font: inherit;
 }
 
+.tl-chat__file-filter-hint {
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
 .tl-chat__notice {
   margin: 0.75rem 1rem 0;
   padding: 0.65rem 0.75rem;

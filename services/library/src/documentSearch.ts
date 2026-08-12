@@ -79,6 +79,69 @@ const STOP_WORDS = new Set([
   "необходим",
   "произвести",
   "производ",
+  // Вопросительные/служебные — иначе «что такое X» ранжирует огромные ТКП по слову «что»
+  "что",
+  "чем",
+  "чего",
+  "кому",
+  "кого",
+  "где",
+  "когда",
+  "куда",
+  "откуда",
+  "почему",
+  "зачем",
+  "как",
+  "каков",
+  "какова",
+  "каково",
+  "такое",
+  "такой",
+  "такая",
+  "такие",
+  "это",
+  "эта",
+  "этот",
+  "эти",
+  "есть",
+  "быть",
+  "был",
+  "была",
+  "были",
+  "или",
+  "для",
+  "при",
+  "без",
+  "под",
+  "над",
+  "про",
+  "между",
+  "после",
+  "перед",
+  "через",
+  "также",
+  "тоже",
+  "уже",
+  "еще",
+  "ещё",
+  "можно",
+  "нужно",
+  "надо",
+  "лишь",
+  "только",
+  "очень",
+  "более",
+  "менее",
+  "определение",
+  "определения",
+  "термин",
+  "термина",
+  "означает",
+  "значит",
+  "пожалуйста",
+  "скажи",
+  "расскажи",
+  "объясни",
 ]);
 
 /** Расширение запросов по документации — общие синонимы, не привязка к одному паспорту. */
@@ -92,39 +155,94 @@ const QUERY_EXPANSIONS: Record<string, string[]> = {
 };
 
 export function queryTerms(query: string): string[] {
+  const { primary, expanded } = analyzeQueryTerms(query);
+  return [...new Set([...primary, ...expanded])].slice(0, 20);
+}
+
+export function analyzeQueryTerms(query: string): { primary: string[]; expanded: string[] } {
   const words =
     query
       .toLowerCase()
       .replace(/ё/g, "е")
       .match(/[a-zа-я0-9]{3,}/g) ?? [];
 
-  const stems = words
-    .filter((word) => !STOP_WORDS.has(word))
-    .flatMap((word) => {
-      const base = word.slice(0, Math.min(word.length, 8));
-      const extra = QUERY_EXPANSIONS[base] ?? QUERY_EXPANSIONS[word.slice(0, 5)] ?? [];
-      return [base, ...extra];
-    });
+  const primary: string[] = [];
+  const expanded: string[] = [];
 
-  return [...new Set(stems)].slice(0, 16);
+  for (const word of words) {
+    if (STOP_WORDS.has(word)) continue;
+    // Для длинных терминов держим полный вид + удлинённый стем,
+    // иначе «электротравма» → «электрот» ловит «электротравматизм» и путается с шумом.
+    const stemLen = word.length >= 10 ? Math.min(word.length, 12) : Math.min(word.length, 8);
+    const stem = word.slice(0, stemLen);
+    primary.push(stem);
+    if (word.length > stemLen) primary.push(word);
+
+    const extra = QUERY_EXPANSIONS[stem.slice(0, 8)] ?? QUERY_EXPANSIONS[word.slice(0, 5)] ?? [];
+    expanded.push(...extra);
+  }
+
+  return {
+    primary: [...new Set(primary)],
+    expanded: [...new Set(expanded)].filter((t) => !primary.includes(t)),
+  };
+}
+
+/**
+ * Вес термина для ранжирования: длинные/редкие слова важнее коротких.
+ * Без этого «что»/«как» (если просочились) или короткие стемы забивают счётчик
+ * в больших регламентах, а нужный ГОСТ с одним вхождением термина проигрывает.
+ */
+export function termMatchWeight(term: string): number {
+  const t = term.trim().toLowerCase();
+  if (!t) return 0;
+  if (t.length >= 12) return 16;
+  if (t.length >= 10) return 12;
+  if (t.length >= 8) return 8;
+  if (t.length >= 6) return 4;
+  if (t.length >= 5) return 2.5;
+  return 1;
+}
+
+/** Подсчёт вхождений с насыщением — не давать гигантским файлам бесконечный score. */
+export function countTermHits(haystack: string, term: string, maxHits = 40): number {
+  if (!term) return 0;
+  let count = 0;
+  let idx = 0;
+  while (idx < haystack.length && count < maxHits) {
+    const hit = haystack.indexOf(term, idx);
+    if (hit < 0) break;
+    count += 1;
+    idx = hit + term.length;
+  }
+  return count;
+}
+
+export function scoreTextWeighted(
+  normalized: string,
+  terms: string[],
+  expandedTerms: string[] = [],
+): number {
+  let score = 0;
+  for (const term of terms) {
+    const hits = countTermHits(normalized, term);
+    if (hits <= 0) continue;
+    const w = termMatchWeight(term);
+    // Логарифмическое насыщение: 1 вхождение ≈ w, 10 ≈ ~3w, а не 10w
+    score += w * (1 + Math.log2(hits));
+  }
+  // Синонимы/расширения — только лёгкий буст, иначе оглавление «Пусконаладка» бьёт тело главы
+  for (const term of expandedTerms) {
+    const hits = countTermHits(normalized, term, 12);
+    if (hits <= 0) continue;
+    const w = termMatchWeight(term) * 0.25;
+    score += w * (1 + Math.log2(hits));
+  }
+  return score;
 }
 
 function normalizeForSearch(text: string): string {
   return text.toLowerCase().replace(/ё/g, "е");
-}
-
-function scoreText(normalized: string, terms: string[]): number {
-  let score = 0;
-  for (const term of terms) {
-    let idx = 0;
-    while (idx < normalized.length) {
-      const hit = normalized.indexOf(term, idx);
-      if (hit < 0) break;
-      score += 1;
-      idx = hit + term.length;
-    }
-  }
-  return score;
 }
 
 function mergeRanges(ranges: Array<{ start: number; end: number }>): Array<{ start: number; end: number }> {
@@ -165,16 +283,16 @@ export function buildDocumentContext(
 
   if (pages && pages.length > 0) {
     if (preferWide) {
-      return buildFromPagesWide(pages, terms, maxChars);
+      return buildFromPagesWide(pages, terms.primary, terms.expanded, maxChars);
     }
-    return buildFromPages(pages, terms, maxChars);
+    return buildFromPages(pages, terms.primary, terms.expanded, maxChars);
   }
 
-  if (preferWide || terms.length === 0) {
+  if (preferWide || terms.primary.length === 0) {
     return sliceBodyPreferringChapters(trimmed, maxChars);
   }
 
-  return buildFromWindows(trimmed, terms, maxChars);
+  return buildFromWindows(trimmed, [...terms.primary, ...terms.expanded], maxChars);
 }
 
 const TOC_LINE_HINT_RE =
@@ -242,18 +360,37 @@ function sliceBodyPreferringChapters(text: string, maxChars: number): string {
   return parts.join("\n\n").slice(0, maxChars);
 }
 
-function mergeQueryTerms(query: string, boostTerms: string[] | undefined): string[] {
-  const base = queryTerms(query);
+function mergeQueryTerms(
+  query: string,
+  boostTerms: string[] | undefined,
+): { primary: string[]; expanded: string[] } {
+  const base = analyzeQueryTerms(query);
   if (!boostTerms?.length) return base;
-  const extra = boostTerms.flatMap((term) => queryTerms(term));
-  return [...new Set([...base, ...extra])].slice(0, 24);
+  const extraPrimary: string[] = [];
+  const extraExpanded: string[] = [];
+  for (const term of boostTerms) {
+    const analyzed = analyzeQueryTerms(term);
+    extraPrimary.push(...analyzed.primary);
+    extraExpanded.push(...analyzed.expanded);
+  }
+  return {
+    primary: [...new Set([...base.primary, ...extraPrimary])].slice(0, 24),
+    expanded: [...new Set([...base.expanded, ...extraExpanded])]
+      .filter((t) => !base.primary.includes(t) && !extraPrimary.includes(t))
+      .slice(0, 16),
+  };
 }
 
-function buildFromPages(pages: DocumentPage[], terms: string[], maxChars: number): string {
+function buildFromPages(
+  pages: DocumentPage[],
+  primary: string[],
+  expanded: string[],
+  maxChars: number,
+): string {
   const scored = pages
     .map((entry) => {
       const normalized = normalizeForSearch(entry.text);
-      let score = scoreText(normalized, terms);
+      let score = scoreTextWeighted(normalized, primary, expanded);
       if (looksLikeTocHeavyText(entry.text, 1)) score *= 0.12;
       return { entry, score };
     })
@@ -278,12 +415,17 @@ function buildFromPages(pages: DocumentPage[], terms: string[], maxChars: number
 }
 
 /** Широкий контекст: релевантные страницы + соседние + заполнение по порядку */
-function buildFromPagesWide(pages: DocumentPage[], terms: string[], maxChars: number): string {
+function buildFromPagesWide(
+  pages: DocumentPage[],
+  primary: string[],
+  expanded: string[],
+  maxChars: number,
+): string {
   const byPage = new Map(pages.map((p) => [p.page, p]));
   const scored = pages
     .map((entry) => {
       const normalized = normalizeForSearch(entry.text);
-      let score = scoreText(normalized, terms);
+      let score = scoreTextWeighted(normalized, primary, expanded);
       if (looksLikeTocHeavyText(entry.text, 1)) score *= 0.08;
       return { entry, score };
     })
@@ -400,8 +542,12 @@ export function documentMatchesQuery(
   fileName: string,
   query: string,
 ): boolean {
-  const terms = queryTerms(query);
-  if (terms.length === 0) return true;
+  const { primary, expanded } = analyzeQueryTerms(query);
+  if (primary.length === 0 && expanded.length === 0) return true;
   const haystack = normalizeForSearch(`${fileName} ${text}`);
-  return terms.some((term) => haystack.includes(term));
+  const strong = primary.filter((t) => t.length >= 5);
+  const primaryCheck = strong.length > 0 ? strong : primary;
+  if (primaryCheck.some((term) => haystack.includes(term))) return true;
+  // Синонимы (пуск ← запуск) — тоже считаем совпадением на уровне файла
+  return expanded.some((term) => term.length >= 4 && haystack.includes(term));
 }

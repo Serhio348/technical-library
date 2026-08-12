@@ -5,6 +5,7 @@ import {
   extractScopeBoostTerms,
   extractSectionBoostTerms,
   queryTerms,
+  scoreTextWeighted,
   skipLeadingToc,
 } from "./documentSearch";
 import {
@@ -85,6 +86,38 @@ describe("documentSearch", () => {
     expect(ctx).toContain("Первый запуск");
   });
 
+  it("drops question filler words so definition queries stay on the topic term", () => {
+    const terms = queryTerms("Что такое электротравма?");
+    expect(terms).not.toContain("что");
+    expect(terms).not.toContain("такое");
+    expect(terms.some((t) => t.includes("электротрав"))).toBe(true);
+  });
+
+  it("weights long topic terms over short noise in page ranking", () => {
+    const pages = [
+      {
+        page: 2,
+        text:
+          "Что такое правила. Что нужно знать. Что делать при работах. ".repeat(40) +
+          "Эксплуатация электроустановок и требования безопасности.",
+      },
+      {
+        page: 10,
+        text:
+          "электротравма: травма, вызванная воздействием электрического тока или дуги. " +
+          "Определение термина электротравма применяется в настоящем стандарте.",
+      },
+    ];
+    const ctx = buildDocumentContext(
+      pages.map((p) => p.text).join("\n\n"),
+      "Что такое электротравма?",
+      400,
+      pages,
+    );
+    expect(ctx).toContain("[стр. 10]");
+    expect(ctx.toLowerCase()).toContain("электротравма");
+  });
+
   it("matches documents by expanded terms", () => {
     expect(
       documentMatchesQuery(
@@ -116,5 +149,17 @@ describe("documentSearch", () => {
 
     const ctx = buildDocumentContext(full, "первый запуск", 500, null, { preferWide: true });
     expect(ctx).toContain("первым запуском");
+  });
+
+  it("prefers a short glossary hit over a huge file full of weak stems", () => {
+    const terms = queryTerms("Что такое электротравма?");
+    const glossary =
+      "Термины и определения. электротравма — травма от воздействия электрического тока.";
+    const hugeTk =
+      "Правила технической эксплуатации электроустановок. ".repeat(200) +
+      "требования к персоналу и охране труда на электроустановках.";
+    const glossScore = scoreTextWeighted(glossary.toLowerCase().replace(/ё/g, "е"), terms);
+    const tkScore = scoreTextWeighted(hugeTk.toLowerCase().replace(/ё/g, "е"), terms);
+    expect(glossScore).toBeGreaterThan(tkScore);
   });
 });

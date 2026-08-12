@@ -17,11 +17,17 @@ function isExpandRequest(text: string): boolean {
   return EXPAND_REQUEST_RE.test(text.trim());
 }
 
-function findPendingPreview(messages: ChatMessage[]): { question: string; history: ChatMessage[] } | null {
+function findPendingPreview(
+  messages: ChatMessage[],
+): { question: string; history: ChatMessage[]; documents: string[] } | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const msg = messages[i];
     if (msg?.role === "assistant" && msg.mode === "preview" && msg.pendingQuestion) {
-      return { question: msg.pendingQuestion, history: messages.slice(0, i + 1) };
+      return {
+        question: msg.pendingQuestion,
+        history: messages.slice(0, i + 1),
+        documents: msg.pendingDocuments ?? [],
+      };
     }
   }
   return null;
@@ -132,11 +138,14 @@ export function ChatPanel({
       attachment?: File | null;
       imagePreview?: string | null;
       skipUserBubble?: boolean;
+      documents?: string[];
     },
   ): Promise<void> => {
     const attachment = options?.attachment ?? null;
     const imagePreview = options?.imagePreview ?? null;
     const isImage = attachment ? isImageAttachmentFile(attachment) : false;
+    const requestDocuments = options?.documents ?? documents;
+    const usedFileFilter = requestDocuments.length > 0;
 
     if (!options?.skipUserBubble) {
       const label = options?.userLabel ?? userMessageLabel(question, attachment);
@@ -157,8 +166,21 @@ export function ChatPanel({
     setLoadingWithAttachment(!!attachment);
     setLoadingAttachmentIsImage(!!attachment && isImage);
     try {
-      const result = await askQuestion(slug, question, scopePath, history, mode, attachment, documents);
+      const result = await askQuestion(
+        slug,
+        question,
+        scopePath,
+        history,
+        mode,
+        attachment,
+        requestDocuments,
+      );
       const resolvedQuestion = result.resolved_question ?? question;
+
+      // One-shot: после вопроса сбрасываем выбор файла в UI
+      if (mode === "preview" && usedFileFilter) {
+        setDocumentPath("");
+      }
 
       setMessages((prev) => {
         const next = [...prev];
@@ -191,6 +213,7 @@ export function ChatPanel({
           context_available: result.context_available,
           mode: result.mode,
           pendingQuestion: mode === "preview" ? resolvedQuestion : undefined,
+          pendingDocuments: mode === "preview" && usedFileFilter ? requestDocuments : undefined,
         });
         return next;
       });
@@ -201,6 +224,9 @@ export function ChatPanel({
           `${prefix}: ${result.recognized_question.slice(0, 120)}${result.recognized_question.length > 120 ? "…" : ""}`,
         );
         window.setTimeout(() => setComposerHint(null), 5000);
+      } else if (mode === "preview" && usedFileFilter) {
+        setComposerHint("Фильтр по файлу сброшен — следующий вопрос по всем файлам папки.");
+        window.setTimeout(() => setComposerHint(null), 4000);
       }
     } catch (e) {
       const code = e instanceof Error ? e.message : "ask_failed";
@@ -230,12 +256,16 @@ export function ChatPanel({
     voiceBaseRef.current = "";
     const preview = attachedPreview;
     const isImage = attachment ? isImageAttachmentFile(attachment) : false;
+    const docsForRequest = documents;
     clearAttachment();
     setError(null);
 
     const pending = text && isExpandRequest(text) ? findPendingPreview(messages) : null;
     if (pending) {
-      await requestAnswer(pending.question, "full", pending.history, { userLabel: text });
+      await requestAnswer(pending.question, "full", pending.history, {
+        userLabel: text,
+        documents: pending.documents,
+      });
       return;
     }
 
@@ -252,6 +282,7 @@ export function ChatPanel({
       attachment,
       imagePreview: preview,
       skipUserBubble: true,
+      documents: docsForRequest,
     });
   };
 
@@ -259,7 +290,10 @@ export function ChatPanel({
     if (!msg.pendingQuestion || loading) return;
     setError(null);
     const history = messages.slice(0, msgIndex + 1);
-    await requestAnswer(msg.pendingQuestion, "full", history, { userLabel: "Показать подробный ответ" });
+    await requestAnswer(msg.pendingQuestion, "full", history, {
+      userLabel: "Показать подробный ответ",
+      documents: msg.pendingDocuments ?? [],
+    });
   };
 
   const handleClearHistory = (): void => {
@@ -337,6 +371,7 @@ export function ChatPanel({
               </option>
             ))}
           </select>
+          <span className="tl-chat__file-filter-hint">После вопроса фильтр сбрасывается сам</span>
         </label>
       ) : null}
 

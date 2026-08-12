@@ -157,10 +157,13 @@ export async function applyDocument(ctx: Context, path: string): Promise<void> {
   }
 
   const name = session.documentPath.split("/").pop() ?? session.documentPath;
-  await ctx.reply(`📄 Файл: <b>${name}</b>\n\nПоиск и вопросы — только в этом файле.\n\n${sessionLabel(session)}`, {
-    parse_mode: "HTML",
-    ...mainKeyboard(),
-  });
+  await ctx.reply(
+    `📄 Файл: <b>${name}</b>\n\nСледующий поиск/вопрос — только в этом файле, затем фильтр сбросится сам.\n\n${sessionLabel(session)}`,
+    {
+      parse_mode: "HTML",
+      ...mainKeyboard(),
+    },
+  );
 }
 
 export async function ensureDirectionOrPrompt(ctx: Context): Promise<boolean> {
