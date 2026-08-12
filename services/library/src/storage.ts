@@ -15,10 +15,14 @@ import {
   safePathSegment,
 } from "./paths.js";
 import {
+  analyzeQueryTerms,
   buildDocumentContext,
+  countTermHits,
   documentMatchesQuery,
   extractSectionBoostTerms,
   queryTerms,
+  scoreTextWeighted,
+  termMatchWeight,
   type DocumentContextOptions,
   type DocumentPage,
 } from "./documentSearch.js";
@@ -823,23 +827,12 @@ async function scoreExtractedDocument(
   if (!documentMatchesQuery(text, name, query)) return null;
 
   const normalized = text.toLowerCase().replace(/ё/g, "е");
-  let score =
-    2 +
-    terms.reduce((sum, term) => {
-      let count = 0;
-      let idx = 0;
-      while (idx < normalized.length) {
-        const hit = normalized.indexOf(term, idx);
-        if (hit < 0) break;
-        count += 1;
-        idx = hit + term.length;
-      }
-      return sum + count;
-    }, 0);
+  const analyzed = analyzeQueryTerms(query);
+  let score = 2 + scoreTextWeighted(normalized, analyzed.primary, analyzed.expanded);
 
   // Упоминание имени/автора/номера в вопросе → сильно поднимаем файл
   const nameNorm = name.toLowerCase().replace(/ё/g, "е");
-  for (const term of terms) {
+  for (const term of analyzed.primary) {
     if (term.length >= 4 && nameNorm.includes(term)) score += 80;
   }
   const qNorm = query.toLowerCase().replace(/ё/g, "е");
@@ -847,10 +840,37 @@ async function scoreExtractedDocument(
     if (qNorm.includes(token)) score += 40;
   }
 
+  // Точное вхождение длинного термина из вопроса
+  const rawWords = [
+    ...new Set(
+      (query
+        .toLowerCase()
+        .replace(/ё/g, "е")
+        .match(/[a-zа-я0-9]{6,}/g) ?? []).filter((w) => !/^(определ|термин|означа|значит)/.test(w)),
+    ),
+  ];
+  for (const word of rawWords) {
+    const hits = countTermHits(normalized, word, 20);
+    if (hits > 0) score += termMatchWeight(word) * 3 * (1 + Math.log2(hits));
+  }
+
+  // Определения / глоссарий рядом с термином
+  if (/что\s+такое|определени|термин/i.test(query)) {
+    if (/определени|термин|настоящ\w+\s+стандарт\w*\s+применя|означает/i.test(normalized)) {
+      score += 25;
+    }
+  }
+
   const meta = await readExtractedTextMeta(root, slug, basePath);
   if (meta?.index_status === "partial") score *= 0.85;
 
-  const firstHit = terms
+  // Сильный термин отсутствует — файл почти наверняка шум
+  const strongTerms = analyzed.primary.filter((t) => t.length >= 6);
+  if (strongTerms.length > 0 && !strongTerms.some((t) => normalized.includes(t) || nameNorm.includes(t))) {
+    score *= 0.15;
+  }
+
+  const firstHit = analyzed.primary
     .map((term) => normalized.indexOf(term))
     .filter((idx) => idx >= 0)
     .sort((a, b) => a - b)[0];
@@ -1045,22 +1065,37 @@ export async function buildLibraryContextForQuery(
   const candidates =
     maxDocuments > 0 ? filtered.slice(0, maxDocuments) : filtered;
 
-  // Упаковка по бюджету символов: чем больше релевантных файлов — тем короче кусок на каждый
+  // Упаковка: сначала документы с реальным текстовым совпадением, не «заглушки» 0.25.
+  // Если есть сильные хиты — не размазываем бюджет по десятку слабо релевантных ТКП.
+  const strongHits = candidates.filter((h) => h.score >= 8);
+  const mediumHits = candidates.filter((h) => h.score > 1.5 && h.score < 8);
+  const packFrom =
+    strongHits.length > 0
+      ? strongHits
+      : mediumHits.length > 0
+        ? mediumHits
+        : candidates.filter((h) => h.score > 0.4).length > 0
+          ? candidates.filter((h) => h.score > 0.4)
+          : candidates;
+
+  // Preview/узкий режим: лучше 2–4 файла с нормальным куском, чем 8 по крохам
+  const focusCap = preferWide ? 10 : 4;
+  const focused = packFrom.slice(0, Math.max(focusCap, routedPaths.length || 0));
+
   const items: LibraryContextItem[] = [];
   let usedChars = 0;
-  const relevant = candidates.filter((h) => h.score > 0.4);
-  const packFrom = relevant.length > 0 ? relevant : candidates;
 
-  for (let i = 0; i < packFrom.length; i += 1) {
+  for (let i = 0; i < focused.length; i += 1) {
     if (usedChars >= totalCharsBudget) break;
-    const hit = packFrom[i]!;
-    const remainingDocs = Math.max(1, packFrom.length - i);
+    const hit = focused[i]!;
+    const remainingDocs = Math.max(1, focused.length - i);
     const remainingBudget = totalCharsBudget - usedChars;
-    // Справедливая доля + не больше maxCharsPerDocument
+    // Топ-файл забирает больше: определение/норма часто в одном документе
+    const topShare = i === 0 ? 0.55 : i === 1 ? 0.35 : 1 / remainingDocs;
     const fairShare = Math.floor(remainingBudget / remainingDocs);
     const charsForDoc = Math.max(
-      1_500,
-      Math.min(maxCharsPerDocument, Math.max(fairShare, Math.floor(remainingBudget * 0.35))),
+      2_000,
+      Math.min(maxCharsPerDocument, Math.max(fairShare, Math.floor(remainingBudget * topShare))),
     );
 
     const fullText = await readExtractedText(root, slug, hit.path, 500_000);

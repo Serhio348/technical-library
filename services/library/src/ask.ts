@@ -165,9 +165,9 @@ async function fetchContext(
   // documents[] — явное ограничение «искать только в этих файлах».
   if (mode === "preview") {
     return buildLibraryContextForQuery(root, slug, question, {
-      maxCharsPerDocument: 6_000,
+      maxCharsPerDocument: 10_000,
       maxDocuments: 0,
-      totalCharsBudget: 28_000,
+      totalCharsBudget: 36_000,
       scope_path: scopePath,
       prefer_wide_context: false,
       boost_terms: boostTerms,
