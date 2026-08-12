@@ -104,6 +104,8 @@ export type AskResponse = {
   resolved_question?: string;
   recognized_question?: string;
   attachment_filename?: string;
+  ocr_confidence?: "ok" | "low";
+  needs_clarification?: boolean;
 };
 
 export type SearchHit = {

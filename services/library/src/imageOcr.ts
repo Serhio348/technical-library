@@ -358,3 +358,32 @@ export function isPhotoOcrUsable(text: string | null): boolean {
 
   return score >= 70 && cyr >= 50 && cyrRatio >= 0.5;
 }
+
+/**
+ * Текст читается, но качество сомнительное (смаз, блики, обрезка).
+ * Лучше уточнить у пользователя, чем отвечать «в молоко».
+ */
+export function isPhotoOcrDoubtful(text: string | null): boolean {
+  if (!text?.trim()) return true;
+  if (!isPhotoOcrUsable(text)) return true;
+
+  const cleaned = cleanupPhotoOcrText(text);
+  const score = scorePhotoOcrQuality(cleaned);
+  const words = countCyrillicWords(cleaned, 4);
+  const lines = cleaned.split("\n").map((l) => l.trim()).filter(Boolean);
+  const garbage = lines.filter((l) => isGarbageOcrLine(l)).length;
+  const hasQuizShape = /вопрос|вариант|\b[1-9a-dа-г](?:[.]|\))\s+\S/i.test(cleaned);
+
+  // Низкий балл при формально «usable»
+  if (score < 95) return true;
+  // Мало связных слов без структуры теста
+  if (words < 10 && !hasQuizShape) return true;
+  // Много мусорных строк среди оставшихся
+  if (lines.length >= 4 && garbage / lines.length >= 0.3) return true;
+  // Обрывки: много коротких «слов» из 1–2 букв
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  const tiny = tokens.filter((t) => /^[А-Яа-яЁёA-Za-z]{1,2}$/.test(t)).length;
+  if (tokens.length >= 12 && tiny / tokens.length >= 0.35) return true;
+
+  return false;
+}

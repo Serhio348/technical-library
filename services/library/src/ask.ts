@@ -6,8 +6,10 @@ import {
   attachmentKindLabel,
   extractTextFromAskAttachment,
   isAskAttachmentTextUsable,
+  isImageAttachmentFilename,
 } from "./attachmentExtract.js";
 import { extractScopeBoostTerms, extractSectionBoostTerms } from "./documentSearch.js";
+import { cleanupPhotoOcrText, isPhotoOcrDoubtful } from "./imageOcr.js";
 
 export type AskHistoryItem = {
   role: "user" | "assistant";
@@ -31,6 +33,10 @@ export type AskResult = {
   attachment_filename?: string;
   /** Выделенные ограничения области (ЗРУ, ОРУ, ВЛ…) — для отладки/UI. */
   question_scope?: string[];
+  /** Качество OCR фото: low — лучше уточнить формулировку. */
+  ocr_confidence?: "ok" | "low";
+  /** Не искали в библиотеке — ждём уточнения текста/фото. */
+  needs_clarification?: boolean;
 };
 
 const MCQ_INSTRUCTIONS = `Если в вопросе есть варианты ответа — нумерованный или буквенный список (1), 2), 3), а), б), в) и т.п.), в том числе если текст пришёл с фото после OCR:
@@ -210,14 +216,47 @@ export async function answerLibraryQuestion(
 
   let extractedFromAttachment: string | null = null;
   let attachmentFilename: string | undefined;
+  let ocrConfidence: "ok" | "low" | undefined;
   if (attachment?.buffer?.length) {
     attachmentFilename = attachment.filename;
     const raw = await extractTextFromAskAttachment(attachment.buffer, attachment.filename);
     if (isAskAttachmentTextUsable(raw, attachment.filename)) {
-      extractedFromAttachment = raw;
+      extractedFromAttachment = isImageAttachmentFilename(attachment.filename)
+        ? cleanupPhotoOcrText(raw!)
+        : raw;
+      if (isImageAttachmentFilename(attachment.filename) && isPhotoOcrDoubtful(extractedFromAttachment)) {
+        ocrConfidence = "low";
+      } else if (isImageAttachmentFilename(attachment.filename)) {
+        ocrConfidence = "ok";
+      }
     } else if (!question.trim()) {
       throw new Error("extract_no_text");
     }
+  }
+
+  // Плохое фото без текстовой подписи — не угадываем по каше OCR
+  if (
+    ocrConfidence === "low" &&
+    extractedFromAttachment &&
+    !question.trim() &&
+    isImageAttachmentFilename(attachmentFilename ?? "")
+  ) {
+    const preview = extractedFromAttachment.slice(0, 900);
+    return {
+      answer:
+        "Текст с фото распознан неуверенно (смаз, блики или обрезка). Чтобы не ответить не на тот вопрос, нужно уточнение.\n\n" +
+        `Распознано:\n«${preview}${extractedFromAttachment.length > 900 ? "…" : ""}»\n\n` +
+        "Пришлите более чёткий скриншот/фото или наберите вопрос текстом (можно коротко поправить распознанное). " +
+        "Фильтр по файлу и история диалога сохраняются.",
+      sources: [],
+      context_available: false,
+      mode,
+      resolved_question: extractedFromAttachment,
+      recognized_question: extractedFromAttachment,
+      attachment_filename: attachmentFilename,
+      ocr_confidence: "low",
+      needs_clarification: true,
+    };
   }
 
   const q = [question.trim(), extractedFromAttachment?.trim()].filter(Boolean).join("\n\n");
@@ -249,10 +288,16 @@ export async function answerLibraryQuestion(
     scopeLabels.length > 0
       ? `\n\nВАЖНО — область вопроса (не расширять): ${scopeLabels.join(", ")}. Отвечай только в этих рамках.`
       : "";
+  const ocrWarn =
+    ocrConfidence === "low"
+      ? "\n\nВнимание: текст с фото распознан неуверенно. Если формулировка сомнительна — скажи об этом и попроси уточнить, не угадывай."
+      : "";
+  const followUpNote =
+    "\n\nЕсли сообщение — уточнение к предыдущему вопросу в истории (короткое «а в ЗРУ?», «только пункт 2» и т.п.) — сохрани контекст предыдущего вопроса.";
   const userContent =
     mode === "preview"
-      ? `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
-      : `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
+      ? `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}${ocrWarn}${followUpNote}\n\nКороткие фрагменты для ориентации:\n\n${contextBlock}`
+      : `Вопрос пользователя${attachmentNote} (может содержать варианты ответа, в т.ч. из файла или фото):\n${q}${docFilterNote}${scopeBlock}${ocrWarn}${followUpNote}\n\nФрагменты из библиотеки:\n\n${contextBlock}`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: mode === "preview" ? PREVIEW_SYSTEM_PROMPT : FULL_SYSTEM_PROMPT },
@@ -271,5 +316,6 @@ export async function answerLibraryQuestion(
     ...(extractedFromAttachment ? { recognized_question: extractedFromAttachment } : {}),
     ...(attachmentFilename ? { attachment_filename: attachmentFilename } : {}),
     ...(scopeLabels.length > 0 ? { question_scope: scopeLabels } : {}),
+    ...(ocrConfidence ? { ocr_confidence: ocrConfidence } : {}),
   };
 }

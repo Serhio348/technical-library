@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanupPhotoOcrText,
   isGarbageOcrLine,
+  isPhotoOcrDoubtful,
   isPhotoOcrUsable,
   scorePhotoOcrQuality,
   stripMisdetectedScripts,
@@ -51,6 +52,21 @@ describe("photo OCR cleanup", () => {
       "Вопрос № 5 из 23\nРазрешается ли надевать, снимать и поправлять на ходу приводные ремни теплоустановок?\n" +
       "1. Разрешается при использовании защитных рукавиц.\n2. Не разрешается.";
     expect(isPhotoOcrUsable(quiz)).toBe(true);
+  });
+
+  it("flags borderline OCR as doubtful so the bot can ask to clarify", () => {
+    const messy =
+      "Токоведущие части были?\n1. Когда потенциал.\n2. Во всех случаях.\n" +
+      "а а а б б в в г г д д е е ж ж";
+    expect(isPhotoOcrDoubtful(messy) || scorePhotoOcrQuality(messy) < 120).toBe(true);
+
+    const clearQuiz =
+      "Вопрос № 5 из 23\nРазрешается ли надевать, снимать и поправлять на ходу приводные ремни теплоустановок?\n" +
+      "Варианты ответа:\n" +
+      "1. Разрешается при использовании защитных рукавиц и при остановленном оборудовании.\n" +
+      "2. Не разрешается производить указанные действия на ходу приводных ремней.";
+    expect(isPhotoOcrUsable(clearQuiz)).toBe(true);
+    expect(isPhotoOcrDoubtful(clearQuiz)).toBe(false);
   });
 
   it("accepts cleaned quiz with leftover noise filtered", () => {
