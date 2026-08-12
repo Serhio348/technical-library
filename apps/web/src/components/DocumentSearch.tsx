@@ -70,6 +70,15 @@ export function DocumentSearch({
     }
   }, [files, documentPath]);
 
+  const prevDebouncedRef = useRef("");
+  useEffect(() => {
+    // Сброс фильтра при выходе из поиска (очистили строку), не при выборе файла на пустой строке
+    if (prevDebouncedRef.current && !debounced && documentPath) {
+      setDocumentPath("");
+    }
+    prevDebouncedRef.current = debounced;
+  }, [debounced, documentPath]);
+
   useEffect(() => {
     if (!debounced) {
       setResults([]);

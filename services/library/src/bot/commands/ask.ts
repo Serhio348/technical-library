@@ -8,7 +8,7 @@ import {
 } from "../../attachmentExtract.js";
 import { escHtml, truncate } from "../format.js";
 import { askLibrary } from "../libraryClient.js";
-import { clearInputMode, getSession } from "../session.js";
+import { clearDocumentFilter, clearInputMode, getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
 import { runSearchQuery } from "./search.js";
@@ -47,20 +47,40 @@ export async function runAsk(
 
   clearInputMode(session);
 
+  const fileLabel = session.documentPath
+    ? (session.documentPath.split("/").pop() ?? session.documentPath)
+    : null;
   const status = hasAttachment
     ? isImage
       ? "📷 Распознаю фото и ищу в документах…"
       : `📄 Читаю ${attachmentKindLabel(attachment!.filename)} и ищу в документах…`
     : mode === "full"
       ? "Формирую подробный ответ…"
-      : session.documentPath
-        ? `Ищу в файле «${session.documentPath.split("/").pop()}»…`
+      : fileLabel
+        ? `Ищу в файле «${fileLabel}»…`
         : "Ищу раздел в документах…";
   await ctx.reply(status);
 
   try {
     const history = mode === "full" ? session.askHistory : [];
-    const documents = session.documentPath ? [session.documentPath] : [];
+    // Preview: фильтр one-shot — применяем и сразу сбрасываем (подробный ответ берёт expandDocuments).
+    // Full: используем документы с preview.
+    let documents: string[];
+    let usedFileFilter = false;
+    if (mode === "full") {
+      documents = session.expandDocuments.length
+        ? session.expandDocuments
+        : session.documentPath
+          ? [session.documentPath]
+          : [];
+      usedFileFilter = documents.length > 0;
+    } else {
+      documents = session.documentPath ? [session.documentPath] : [];
+      usedFileFilter = documents.length > 0;
+      session.expandDocuments = documents;
+      clearDocumentFilter(session);
+    }
+
     const result = await askLibrary(
       session.slug,
       q,
@@ -84,6 +104,7 @@ export async function runAsk(
       session.askHistory.push({ role: "assistant", content: result.answer });
     } else {
       session.pendingQuestion = null;
+      session.expandDocuments = [];
       session.askHistory.push({ role: "assistant", content: result.answer });
     }
     session.askHistory = session.askHistory.slice(-8);
@@ -103,9 +124,13 @@ export async function runAsk(
         ? `\n\n<b>Источники:</b>\n${result.sources.map((s) => `• ${escHtml(s.name)}`).join("\n")}`
         : "";
 
+    const filterNote =
+      usedFileFilter && mode === "preview"
+        ? "\n\n📄 Фильтр по файлу сброшен — следующий вопрос снова по всей области (если не выберете 📄 Файл)."
+        : "";
     const suffix = mode === "preview" ? "\n\n📖 Полный ответ — кнопка «Подробный ответ»" : "";
 
-    await ctx.reply(truncate(`${recognized}${escHtml(result.answer)}${sources}${suffix}`), {
+    await ctx.reply(truncate(`${recognized}${escHtml(result.answer)}${sources}${suffix}${filterNote}`), {
       parse_mode: "HTML",
       ...mainKeyboard(),
     });

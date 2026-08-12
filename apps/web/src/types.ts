@@ -89,6 +89,8 @@ export type ChatMessage = {
   context_available?: boolean;
   mode?: "preview" | "full";
   pendingQuestion?: string;
+  /** Файл(ы), с которыми был сделан preview — для «подробного ответа». */
+  pendingDocuments?: string[];
   imagePreview?: string;
   hasImage?: boolean;
   attachmentName?: string;
