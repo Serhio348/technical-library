@@ -837,6 +837,16 @@ async function scoreExtractedDocument(
       return sum + count;
     }, 0);
 
+  // Упоминание имени/автора/номера в вопросе → сильно поднимаем файл
+  const nameNorm = name.toLowerCase().replace(/ё/g, "е");
+  for (const term of terms) {
+    if (term.length >= 4 && nameNorm.includes(term)) score += 80;
+  }
+  const qNorm = query.toLowerCase().replace(/ё/g, "е");
+  for (const token of nameNorm.split(/[^a-zа-я0-9.]+/).filter((t) => t.length >= 4)) {
+    if (qNorm.includes(token)) score += 40;
+  }
+
   const meta = await readExtractedTextMeta(root, slug, basePath);
   if (meta?.index_status === "partial") score *= 0.85;
 
@@ -920,13 +930,21 @@ export type LibraryContextItem = {
   extraction: ExtractedTextMeta | null;
 };
 
+/**
+ * Собирает контекст для ИИ без жёсткого «только 2 файла».
+ * Лимит — суммарный бюджет символов: в папку из 8 файлов и в большую библиотеку
+ * попадают все релевантные документы, пока хватает бюджета.
+ */
 export async function buildLibraryContextForQuery(
   root: string,
   slug: string,
   query: string,
   options: {
     maxCharsPerDocument?: number;
+    /** Мягкий потолок (защита от тысяч файлов). 0 = без потолка по числу. */
     maxDocuments?: number;
+    /** Суммарный бюджет символов на все документы в ответе. */
+    totalCharsBudget?: number;
     folders?: string[];
     documents?: string[];
     doc_types?: DocumentType[];
@@ -936,25 +954,37 @@ export async function buildLibraryContextForQuery(
   } = {},
 ): Promise<LibraryContextItem[]> {
   const maxCharsPerDocument = options.maxCharsPerDocument ?? 20_000;
-  const maxDocuments = options.maxDocuments ?? 4;
+  const maxDocuments = options.maxDocuments ?? 0; // 0 = не резать по числу файлов
+  const totalCharsBudget = options.totalCharsBudget ?? 80_000;
   const folders = options.folders ?? [];
   const documents = options.documents ?? [];
   const docTypes = options.doc_types ?? [];
   const scopePath = (options.scope_path ?? "").trim().replace(/\\/g, "/");
   const sectionTerms = extractSectionBoostTerms(query);
+  const terms = queryTerms(query);
+  const preferWide = options.prefer_wide_context ?? false;
   const contextOptions: DocumentContextOptions = {
     boostTerms: [...(options.boost_terms ?? []), ...sectionTerms],
-    preferWide: options.prefer_wide_context,
+    preferWide,
   };
 
   const catalog = await listDocumentCatalog(root, slug, scopePath);
   const routedPaths = resolveCatalogDocumentPaths(catalog, documents);
 
+  let scopeFiles: string[] = [];
+  if (scopePath) {
+    scopeFiles = await listIndexableFiles(root, slug, scopePath);
+  }
+
+  // Поиск: по указанным документам / по scope целиком / по направлению
   let hits: SearchHit[];
   if (routedPaths.length > 0) {
-    hits = await searchInstallationPaths(root, slug, query, routedPaths, 12);
+    hits = await searchInstallationPaths(root, slug, query, routedPaths, Math.max(routedPaths.length, 50));
+  } else if (scopeFiles.length > 0 && scopeFiles.length <= 40) {
+    // Небольшая/средняя папка — ранжируем ВСЕ файлы, ничего не теряем из-за slice(12)
+    hits = await searchInstallationPaths(root, slug, query, scopeFiles, scopeFiles.length);
   } else {
-    hits = await searchInstallation(root, slug, query, 12);
+    hits = await searchInstallation(root, slug, query, 40);
   }
 
   let filtered =
@@ -970,44 +1000,85 @@ export async function buildLibraryContextForQuery(
     );
   }
 
-  let scopeFileCount = 0;
-  if (scopePath) {
-    const scopeFiles = await listIndexableFiles(root, slug, scopePath);
-    scopeFileCount = scopeFiles.length;
-    if (filtered.length === 0 && scopeFiles.length > 0) {
-      filtered = scopeFiles.map((path) => ({
-        path,
-        name: path.split("/").pop() ?? path,
-        snippet: "",
-        score: 1,
-      }));
+  // Подмешиваем файлы scope, которые поиск отфильтровал (нет текстового совпадения),
+  // но имя файла может совпасть с вопросом — или просто чтобы папка была полной.
+  if (scopeFiles.length > 0) {
+    const have = new Set(filtered.map((h) => h.path));
+    for (const path of scopeFiles) {
+      if (have.has(path)) continue;
+      const name = path.split("/").pop() ?? path;
+      const nameHit = await scoreExtractedDocument(root, slug, path, query, terms);
+      if (nameHit) {
+        filtered.push(nameHit);
+      } else if (scopeFiles.length <= 24) {
+        // В умеренной папке держим все файлы в кандидатах (низкий score)
+        filtered.push({ path, name, snippet: "", score: 0.25 });
+      }
+      have.add(path);
     }
   }
 
-  const preferWide =
-    options.prefer_wide_context ??
-    ((scopeFileCount > 0 && scopeFileCount <= 3) || filtered.length <= 2);
-  contextOptions.preferWide = preferWide;
+  if (filtered.length === 0 && scopeFiles.length > 0) {
+    filtered = scopeFiles.map((path) => ({
+      path,
+      name: path.split("/").pop() ?? path,
+      snippet: "",
+      score: 1,
+    }));
+  }
 
-  const charsPerDoc = preferWide ? Math.max(maxCharsPerDocument, 80_000) : maxCharsPerDocument;
-  const docLimit = preferWide ? Math.min(maxDocuments, 2) : maxDocuments;
+  filtered.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "ru"));
 
+  // Имя/автор в вопросе — всегда в начале списка
+  const qNorm = query.toLowerCase().replace(/ё/g, "е");
+  filtered.sort((a, b) => {
+    const aName = a.name.toLowerCase().replace(/ё/g, "е");
+    const bName = b.name.toLowerCase().replace(/ё/g, "е");
+    const aNamed = terms.some((t) => t.length >= 4 && aName.includes(t)) ||
+      aName.split(/[^a-zа-я0-9.]+/).some((t) => t.length >= 4 && qNorm.includes(t));
+    const bNamed = terms.some((t) => t.length >= 4 && bName.includes(t)) ||
+      bName.split(/[^a-zа-я0-9.]+/).some((t) => t.length >= 4 && qNorm.includes(t));
+    if (aNamed !== bNamed) return aNamed ? -1 : 1;
+    return b.score - a.score || a.name.localeCompare(b.name, "ru");
+  });
+
+  const candidates =
+    maxDocuments > 0 ? filtered.slice(0, maxDocuments) : filtered;
+
+  // Упаковка по бюджету символов: чем больше релевантных файлов — тем короче кусок на каждый
   const items: LibraryContextItem[] = [];
-  for (const hit of filtered.slice(0, docLimit)) {
+  let usedChars = 0;
+  const relevant = candidates.filter((h) => h.score > 0.4);
+  const packFrom = relevant.length > 0 ? relevant : candidates;
+
+  for (let i = 0; i < packFrom.length; i += 1) {
+    if (usedChars >= totalCharsBudget) break;
+    const hit = packFrom[i]!;
+    const remainingDocs = Math.max(1, packFrom.length - i);
+    const remainingBudget = totalCharsBudget - usedChars;
+    // Справедливая доля + не больше maxCharsPerDocument
+    const fairShare = Math.floor(remainingBudget / remainingDocs);
+    const charsForDoc = Math.max(
+      1_500,
+      Math.min(maxCharsPerDocument, Math.max(fairShare, Math.floor(remainingBudget * 0.35))),
+    );
+
     const fullText = await readExtractedText(root, slug, hit.path, 500_000);
     if (!fullText) continue;
     const pages = await readExtractedPages(root, slug, hit.path);
     const meta = await readExtractedTextMeta(root, slug, hit.path);
-    let text = buildDocumentContext(fullText, query, charsPerDoc, pages, contextOptions);
+    let text = buildDocumentContext(fullText, query, charsForDoc, pages, contextOptions);
     if (meta?.index_status === "partial" && meta.index_note) {
       text = `[Индекс неполный: ${meta.index_note}]\n\n${text}`;
     }
+    if (!text.trim()) continue;
     items.push({
       path: hit.path,
       name: hit.name,
       text,
       extraction: meta,
     });
+    usedChars += text.length;
   }
 
   return items;

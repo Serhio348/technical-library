@@ -1,7 +1,7 @@
 import { Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchSearch, fileUrl } from "../api";
-import type { SearchHit } from "../types";
+import type { LibraryFile, SearchHit } from "../types";
 import { CameraInputButton } from "./CameraInputButton";
 import { SpeechInputButton } from "./SpeechInputButton";
 
@@ -28,17 +28,22 @@ function highlightSnippet(snippet: string, query: string): React.ReactNode {
 export function DocumentSearch({
   slug,
   scopePath,
+  files = [],
 }: {
   slug: string;
   scopePath: string;
+  files?: LibraryFile[];
 }): React.ReactElement {
   const [query, setQuery] = useState("");
+  const [documentPath, setDocumentPath] = useState("");
   const [debounced, setDebounced] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [inputHint, setInputHint] = useState<string | null>(null);
   const voiceBaseRef = useRef("");
+
+  const documents = documentPath ? [documentPath] : [];
 
   const applyRecognizedText = (text: string): void => {
     const base = voiceBaseRef.current.trim();
@@ -60,6 +65,12 @@ export function DocumentSearch({
   }, [query]);
 
   useEffect(() => {
+    if (documentPath && !files.some((f) => f.path === documentPath)) {
+      setDocumentPath("");
+    }
+  }, [files, documentPath]);
+
+  useEffect(() => {
     if (!debounced) {
       setResults([]);
       setSearched(false);
@@ -68,7 +79,7 @@ export function DocumentSearch({
 
     let cancelled = false;
     setLoading(true);
-    void fetchSearch(slug, debounced, scopePath)
+    void fetchSearch(slug, debounced, scopePath, documents)
       .then((items) => {
         if (!cancelled) {
           setResults(items);
@@ -88,21 +99,35 @@ export function DocumentSearch({
     return () => {
       cancelled = true;
     };
-  }, [slug, scopePath, debounced]);
+  }, [slug, scopePath, debounced, documentPath]);
 
   const scopeHint = scopePath
     ? `в «${scopePath.split("/").pop()}» и подпапках`
     : "во всём направлении";
+  const fileHint = documentPath ? ` · только «${documentPath.split("/").pop()}»` : "";
 
   return (
     <div className="tl-search">
+      {files.length > 0 ? (
+        <label className="tl-search__file-filter">
+          <span>Файл</span>
+          <select value={documentPath} onChange={(e) => setDocumentPath(e.target.value)}>
+            <option value="">Все файлы</option>
+            {files.map((file) => (
+              <option key={file.path} value={file.path}>
+                {file.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <div className="tl-search__bar">
         <Search size={16} className="tl-search__icon" />
         <input
           type="search"
           className="tl-search__input"
           value={query}
-          placeholder={`Поиск по тексту ${scopeHint}…`}
+          placeholder={`Поиск по тексту ${scopeHint}${fileHint}…`}
           onChange={(e) => setQuery(e.target.value)}
         />
         <SpeechInputButton

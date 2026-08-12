@@ -2,7 +2,7 @@ import { MessageSquare, Send, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { askQuestion, fileUrl } from "../api";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "../chatStorage";
-import type { ChatMessage, ChatSource } from "../types";
+import type { ChatMessage, ChatSource, LibraryFile } from "../types";
 import { SpeechInputButton } from "./SpeechInputButton";
 import { CameraInputButton } from "./CameraInputButton";
 import { AttachFileButton, isAskAttachmentFile, isImageAttachmentFile } from "./AttachFileButton";
@@ -40,17 +40,20 @@ export function ChatPanel({
   slug,
   scopePath,
   directionTitle,
+  files,
   llmConfigured,
   onClose,
 }: {
   slug: string;
   scopePath: string;
   directionTitle: string;
+  files: LibraryFile[];
   llmConfigured: boolean;
   onClose: () => void;
 }): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadChatHistory(slug, scopePath));
   const [input, setInput] = useState("");
+  const [documentPath, setDocumentPath] = useState("");
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -62,6 +65,8 @@ export function ChatPanel({
   const [composerHint, setComposerHint] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const voiceBaseRef = useRef("");
+
+  const documents = documentPath ? [documentPath] : [];
 
   const clearAttachment = useCallback((): void => {
     setAttachedFile(null);
@@ -112,6 +117,12 @@ export function ChatPanel({
     };
   }, [attachedPreview]);
 
+  useEffect(() => {
+    if (documentPath && !files.some((f) => f.path === documentPath)) {
+      setDocumentPath("");
+    }
+  }, [files, documentPath]);
+
   const requestAnswer = async (
     question: string,
     mode: "preview" | "full",
@@ -146,7 +157,7 @@ export function ChatPanel({
     setLoadingWithAttachment(!!attachment);
     setLoadingAttachmentIsImage(!!attachment && isImage);
     try {
-      const result = await askQuestion(slug, question, scopePath, history, mode, attachment);
+      const result = await askQuestion(slug, question, scopePath, history, mode, attachment, documents);
       const resolvedQuestion = result.resolved_question ?? question;
 
       setMessages((prev) => {
@@ -275,6 +286,7 @@ export function ChatPanel({
   };
 
   const scopeLabel = scopePath ? scopePath.split("/").pop() : "всё направление";
+  const fileLabel = documentPath ? (documentPath.split("/").pop() ?? documentPath) : null;
   const canSend = (input.trim().length > 0 || attachedFile !== null) && llmConfigured && !loading;
 
   return (
@@ -288,6 +300,7 @@ export function ChatPanel({
           <p className="tl-chat__scope">
             {directionTitle}
             {scopePath ? ` → ${scopeLabel}` : ""}
+            {fileLabel ? ` → ${fileLabel}` : ""}
           </p>
         </div>
         <div className="tl-chat__header-actions">
@@ -308,11 +321,31 @@ export function ChatPanel({
         </div>
       ) : null}
 
+      {files.length > 0 ? (
+        <label className="tl-chat__file-filter">
+          <span>Искать в файле</span>
+          <select
+            value={documentPath}
+            disabled={loading}
+            onChange={(e) => setDocumentPath(e.target.value)}
+          >
+            <option value="">Все файлы в папке</option>
+            {files.map((file) => (
+              <option key={file.path} value={file.path}>
+                {file.name}
+                {file.text_index_status === "ready" ? "" : " (нет индекса)"}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
       <div className="tl-chat__messages">
         {messages.length === 0 ? (
           <p className="tl-chat__empty">
             Задайте вопрос текстом, голосом или прикрепите файл (PDF, Word, фото) — ассистент прочитает
             вложение и подскажет, где искать ответ в документах.
+            {files.length > 0 ? " Можно ограничить поиск одним файлом выше." : ""}
           </p>
         ) : null}
         {messages.map((msg, idx) => (
@@ -359,7 +392,9 @@ export function ChatPanel({
                 : "Читаю файл и ищу в документах…"
               : loadingMode === "full"
                 ? "Формирую подробный ответ…"
-                : "Ищу раздел в документах…"}
+                : documentPath
+                  ? `Ищу в файле «${fileLabel}»…`
+                  : "Ищу раздел в документах…"}
           </p>
         ) : null}
         <div ref={bottomRef} />

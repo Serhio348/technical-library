@@ -22,7 +22,7 @@ import {
 import { extractTextFromImageBuffer } from "./pdfExtract.js";
 import { isPhotoOcrUsable } from "./imageOcr.js";
 import type { DocumentCatalogEntry } from "./documentCatalog.js";
-import { isValidDocumentType } from "./documentCatalog.js";
+import { catalogEntryMatchesPath, isValidDocumentType } from "./documentCatalog.js";
 import {
   buildLibraryContextForQuery,
   createDirection,
@@ -106,6 +106,27 @@ function parseCsvQuery(value: unknown): string[] {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+/** documents from query/body: CSV, JSON array string, or string[]. */
+function parseDocumentsInput(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => String(part ?? "").trim().replace(/\\/g, "/"))
+      .filter((part) => part && isValidRelativePath(part));
+  }
+  if (typeof value !== "string" || !value.trim()) return [];
+  const raw = value.trim();
+  if (raw.startsWith("[")) {
+    try {
+      return parseDocumentsInput(JSON.parse(raw) as unknown);
+    } catch {
+      /* fall through to CSV */
+    }
+  }
+  return parseCsvQuery(raw)
+    .map((part) => part.replace(/\\/g, "/"))
+    .filter((part) => isValidRelativePath(part));
 }
 
 function listDirectionsPayload() {
@@ -440,6 +461,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     const slug = routeSlug(req.params.slug);
     const q = typeof req.query.q === "string" ? req.query.q : "";
     const scopePath = typeof req.query.scope_path === "string" ? req.query.scope_path.trim() : "";
+    const documents = parseDocumentsInput(req.query.documents);
     if (!isValidSlug(slug) || !q.trim() || !isValidRelativePath(scopePath)) {
       res.status(400).json({ error: "invalid_params" });
       return;
@@ -448,6 +470,11 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
       let hits = await searchInstallation(root, slug, q, 12);
       if (scopePath) {
         hits = hits.filter((h) => h.path === scopePath || h.path.startsWith(`${scopePath}/`));
+      }
+      if (documents.length > 0) {
+        hits = hits.filter((h) =>
+          documents.some((doc) => catalogEntryMatchesPath({ path: h.path } as DocumentCatalogEntry, doc)),
+        );
       }
       const enriched = await Promise.all(
         hits.map(async (hit) => ({
@@ -484,7 +511,8 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     try {
       const items = await buildLibraryContextForQuery(root, slug, q, {
         maxCharsPerDocument: maxChars,
-        maxDocuments: 4,
+        maxDocuments: 0,
+        totalCharsBudget: Math.min(200_000, maxChars * 8),
         folders,
         documents,
         doc_types: docTypes.filter(isValidDocumentType),
@@ -501,6 +529,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
     const slug = routeSlug(req.params.slug);
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const scopePath = typeof req.body?.scope_path === "string" ? req.body.scope_path.trim() : "";
+    const documents = parseDocumentsInput(req.body?.documents);
     const historyRaw = typeof req.body?.history === "string" ? req.body.history : req.body?.history;
     let history: unknown = [];
     if (typeof historyRaw === "string") {
@@ -550,6 +579,7 @@ function mountDirectionRoutes(router: Router, root: string, basePath: string): v
         history,
         mode,
         attachment,
+        { documents },
       );
       res.json(result);
     } catch (e) {
