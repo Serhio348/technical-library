@@ -52,7 +52,7 @@ export async function runAsk(
     : null;
   const status = hasAttachment
     ? isImage
-      ? "📷 Распознаю фото и ищу в документах…"
+      ? "📷 Распознаю фото и восстанавливаю варианты…"
       : `📄 Читаю ${attachmentKindLabel(attachment!.filename)} и ищу в документах…`
     : mode === "full"
       ? "Формирую подробный ответ…"
@@ -105,14 +105,18 @@ export async function runAsk(
 
     const extractedLabel = hasAttachment
       ? isImage
-        ? result.ocr_confidence === "low"
-          ? "Распознано с фото (неуверенно)"
-          : "Распознано с фото"
+        ? result.ocr_pipeline === "tesseract+normalize"
+          ? result.ocr_confidence === "low"
+            ? "Восстановлено с фото (неуверенно)"
+            : "Восстановлено с фото"
+          : result.ocr_confidence === "low"
+            ? "Распознано с фото (неуверенно)"
+            : "Распознано с фото"
         : `Из ${attachmentKindLabel(attachment!.filename)}`
       : null;
     const recognized =
-      result.recognized_question && extractedLabel
-        ? `<b>${extractedLabel}:</b>\n${escHtml(truncate(result.recognized_question, 700))}\n\n`
+      (result.normalized_question || result.recognized_question) && extractedLabel
+        ? `<b>${extractedLabel}:</b>\n${escHtml(truncate(result.normalized_question ?? result.recognized_question ?? "", 900))}\n\n`
         : "";
 
     const sources =
