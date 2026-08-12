@@ -103,7 +103,11 @@ export type AskResponse = {
   mode: "preview" | "full";
   resolved_question?: string;
   recognized_question?: string;
+  normalized_question?: string;
   attachment_filename?: string;
+  ocr_confidence?: "ok" | "low";
+  needs_clarification?: boolean;
+  ocr_pipeline?: "tesseract" | "tesseract+normalize";
 };
 
 export type SearchHit = {

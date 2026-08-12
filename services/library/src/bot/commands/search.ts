@@ -1,7 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { escHtml, truncate } from "../format.js";
 import { searchLibrary } from "../libraryClient.js";
-import { clearDocumentFilter, clearInputMode, getSession } from "../session.js";
+import { clearInputMode, getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard } from "../keyboards.js";
 
@@ -18,23 +18,22 @@ export async function runSearchQuery(ctx: Context, query: string): Promise<void>
 
   clearInputMode(session);
   const documents = session.documentPath ? [session.documentPath] : [];
-  const usedFileFilter = documents.length > 0;
-  // One-shot: фильтр действует на этот поиск и сразу сбрасывается
-  clearDocumentFilter(session);
 
-  const status = usedFileFilter
-    ? `🔍 Ищу в файле «${documents[0]!.split("/").pop()}»…`
-    : "🔍 Ищу…";
+  const status =
+    documents.length > 0
+      ? `🔍 Ищу в файле «${documents[0]!.split("/").pop()}»…`
+      : "🔍 Ищу…";
   await ctx.reply(status);
 
   try {
     const hits = await searchLibrary(session.slug, q, session.scopePath, documents);
-    const filterNote = usedFileFilter
-      ? "\n\n📄 Фильтр по файлу сброшен — следующий поиск снова по всей области."
-      : "";
+    const fileStay =
+      documents.length > 0
+        ? "\n\n📄 Фильтр по файлу сохранён для уточнений. Сброс: 📄 Файл → все файлы."
+        : "";
     if (hits.length === 0) {
       await ctx.reply(
-        `Ничего не найдено. Проверьте, что у файлов в веб-интерфейсе есть метка ИИ.${filterNote}`,
+        `Ничего не найдено. Проверьте, что у файлов в веб-интерфейсе есть метка ИИ.${fileStay}`,
         mainKeyboard(),
       );
       return;
@@ -44,13 +43,10 @@ export async function runSearchQuery(ctx: Context, query: string): Promise<void>
       (h, i) => `${i + 1}. <b>${escHtml(h.name)}</b>\n   ${escHtml(h.excerpt)}`,
     );
 
-    await ctx.reply(
-      truncate(`<b>Найдено ${hits.length}:</b>\n\n${lines.join("\n\n")}${filterNote}`),
-      {
-        parse_mode: "HTML",
-        ...mainKeyboard(),
-      },
-    );
+    await ctx.reply(truncate(`<b>Найдено ${hits.length}:</b>\n\n${lines.join("\n\n")}${fileStay}`), {
+      parse_mode: "HTML",
+      ...mainKeyboard(),
+    });
   } catch (e) {
     console.error("[bot/search]", e);
     await ctx.reply("Ошибка поиска.", mainKeyboard());

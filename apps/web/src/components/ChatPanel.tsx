@@ -145,7 +145,6 @@ export function ChatPanel({
     const imagePreview = options?.imagePreview ?? null;
     const isImage = attachment ? isImageAttachmentFile(attachment) : false;
     const requestDocuments = options?.documents ?? documents;
-    const usedFileFilter = requestDocuments.length > 0;
 
     if (!options?.skipUserBubble) {
       const label = options?.userLabel ?? userMessageLabel(question, attachment);
@@ -177,11 +176,6 @@ export function ChatPanel({
       );
       const resolvedQuestion = result.resolved_question ?? question;
 
-      // One-shot: после вопроса сбрасываем выбор файла в UI
-      if (mode === "preview" && usedFileFilter) {
-        setDocumentPath("");
-      }
-
       setMessages((prev) => {
         const next = [...prev];
         if (attachment) {
@@ -211,22 +205,34 @@ export function ChatPanel({
           content: result.answer,
           sources: result.sources,
           context_available: result.context_available,
-          mode: result.mode,
-          pendingQuestion: mode === "preview" ? resolvedQuestion : undefined,
-          pendingDocuments: mode === "preview" && usedFileFilter ? requestDocuments : undefined,
+          mode: result.needs_clarification ? undefined : result.mode,
+          pendingQuestion:
+            mode === "preview" && !result.needs_clarification ? resolvedQuestion : undefined,
+          pendingDocuments:
+            mode === "preview" && !result.needs_clarification && requestDocuments.length > 0
+              ? requestDocuments
+              : undefined,
         });
         return next;
       });
 
-      if (result.recognized_question) {
-        const prefix = isImage ? "Распознано с фото" : "Из файла";
-        setComposerHint(
-          `${prefix}: ${result.recognized_question.slice(0, 120)}${result.recognized_question.length > 120 ? "…" : ""}`,
-        );
+      if (result.needs_clarification) {
+        setComposerHint("Уточните вопрос текстом или пришлите более чёткое фото — фильтр по файлу сохранён.");
+        window.setTimeout(() => setComposerHint(null), 6000);
+      } else if (result.normalized_question || result.recognized_question) {
+        const shown = result.normalized_question ?? result.recognized_question ?? "";
+        const prefix =
+          isImage && result.ocr_pipeline === "tesseract+normalize"
+            ? result.ocr_confidence === "low"
+              ? "Восстановлено с фото (неуверенно)"
+              : "Восстановлено с фото"
+            : isImage && result.ocr_confidence === "low"
+              ? "Распознано с фото (неуверенно)"
+              : isImage
+                ? "Распознано с фото"
+                : "Из файла";
+        setComposerHint(`${prefix}: ${shown.slice(0, 120)}${shown.length > 120 ? "…" : ""}`);
         window.setTimeout(() => setComposerHint(null), 5000);
-      } else if (mode === "preview" && usedFileFilter) {
-        setComposerHint("Фильтр по файлу сброшен — следующий вопрос по всем файлам папки.");
-        window.setTimeout(() => setComposerHint(null), 4000);
       }
     } catch (e) {
       const code = e instanceof Error ? e.message : "ask_failed";
@@ -371,7 +377,9 @@ export function ChatPanel({
               </option>
             ))}
           </select>
-          <span className="tl-chat__file-filter-hint">После вопроса фильтр сбрасывается сам</span>
+          <span className="tl-chat__file-filter-hint">
+            Фильтр держится на уточнениях. Сброс — «Все файлы в папке».
+          </span>
         </label>
       ) : null}
 

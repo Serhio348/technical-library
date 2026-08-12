@@ -8,7 +8,7 @@ import {
 } from "../../attachmentExtract.js";
 import { escHtml, truncate } from "../format.js";
 import { askLibrary } from "../libraryClient.js";
-import { clearDocumentFilter, clearInputMode, getSession } from "../session.js";
+import { clearInputMode, getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
 import { runSearchQuery } from "./search.js";
@@ -52,7 +52,7 @@ export async function runAsk(
     : null;
   const status = hasAttachment
     ? isImage
-      ? "📷 Распознаю фото и ищу в документах…"
+      ? "📷 Распознаю фото и восстанавливаю варианты…"
       : `📄 Читаю ${attachmentKindLabel(attachment!.filename)} и ищу в документах…`
     : mode === "full"
       ? "Формирую подробный ответ…"
@@ -62,24 +62,9 @@ export async function runAsk(
   await ctx.reply(status);
 
   try {
-    const history = mode === "full" ? session.askHistory : [];
-    // Preview: фильтр one-shot — применяем и сразу сбрасываем (подробный ответ берёт expandDocuments).
-    // Full: используем документы с preview.
-    let documents: string[];
-    let usedFileFilter = false;
-    if (mode === "full") {
-      documents = session.expandDocuments.length
-        ? session.expandDocuments
-        : session.documentPath
-          ? [session.documentPath]
-          : [];
-      usedFileFilter = documents.length > 0;
-    } else {
-      documents = session.documentPath ? [session.documentPath] : [];
-      usedFileFilter = documents.length > 0;
-      session.expandDocuments = documents;
-      clearDocumentFilter(session);
-    }
+    // История нужна и для preview — иначе уточнения («а в ЗРУ?») теряют контекст
+    const history = session.askHistory;
+    const documents = session.documentPath ? [session.documentPath] : [];
 
     const result = await askLibrary(
       session.slug,
@@ -98,25 +83,40 @@ export async function runAsk(
         : result.recognized_question
       : resolvedQuestion;
 
+    if (result.needs_clarification) {
+      // Не затираем диалог «успешным» ответом — ждём текст/новое фото
+      session.pendingQuestion = null;
+      await ctx.reply(truncate(escHtml(result.answer)), {
+        parse_mode: "HTML",
+        ...mainKeyboard(),
+      });
+      return;
+    }
+
     if (mode === "preview") {
       session.pendingQuestion = resolvedQuestion;
       session.askHistory.push({ role: "user", content: userHistoryContent });
       session.askHistory.push({ role: "assistant", content: result.answer });
     } else {
       session.pendingQuestion = null;
-      session.expandDocuments = [];
       session.askHistory.push({ role: "assistant", content: result.answer });
     }
     session.askHistory = session.askHistory.slice(-8);
 
     const extractedLabel = hasAttachment
       ? isImage
-        ? "Распознано с фото"
+        ? result.ocr_pipeline === "tesseract+normalize"
+          ? result.ocr_confidence === "low"
+            ? "Восстановлено с фото (неуверенно)"
+            : "Восстановлено с фото"
+          : result.ocr_confidence === "low"
+            ? "Распознано с фото (неуверенно)"
+            : "Распознано с фото"
         : `Из ${attachmentKindLabel(attachment!.filename)}`
       : null;
     const recognized =
-      result.recognized_question && extractedLabel
-        ? `<b>${extractedLabel}:</b>\n${escHtml(truncate(result.recognized_question, 700))}\n\n`
+      (result.normalized_question || result.recognized_question) && extractedLabel
+        ? `<b>${extractedLabel}:</b>\n${escHtml(truncate(result.normalized_question ?? result.recognized_question ?? "", 900))}\n\n`
         : "";
 
     const sources =
@@ -124,13 +124,13 @@ export async function runAsk(
         ? `\n\n<b>Источники:</b>\n${result.sources.map((s) => `• ${escHtml(s.name)}`).join("\n")}`
         : "";
 
-    const filterNote =
-      usedFileFilter && mode === "preview"
-        ? "\n\n📄 Фильтр по файлу сброшен — следующий вопрос снова по всей области (если не выберете 📄 Файл)."
+    const fileStay =
+      documents.length > 0
+        ? `\n\n📄 Фильтр: <i>${escHtml(documents[0]!.split("/").pop() ?? documents[0]!)}</i> — действует и на уточнения. Сброс: 📄 Файл → все файлы.`
         : "";
     const suffix = mode === "preview" ? "\n\n📖 Полный ответ — кнопка «Подробный ответ»" : "";
 
-    await ctx.reply(truncate(`${recognized}${escHtml(result.answer)}${sources}${suffix}${filterNote}`), {
+    await ctx.reply(truncate(`${recognized}${escHtml(result.answer)}${sources}${suffix}${fileStay}`), {
       parse_mode: "HTML",
       ...mainKeyboard(),
     });
@@ -143,7 +143,8 @@ export async function runAsk(
           "Не удалось прочитать текст на фото.\n\n" +
             "• Не снимайте экран монитора — лучше скриншот (PNG) отправить файлом\n" +
             "• Держите телефон прямо, без бликов\n" +
-            "• Текст должен быть крупным и чётким",
+            "• Текст должен быть крупным и чётким\n" +
+            "• Можно добавить подпись с текстом вопроса",
           mainKeyboard(),
         );
       } else {

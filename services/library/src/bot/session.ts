@@ -9,14 +9,11 @@ export type BotSession = {
   /**
    * Optional file filter within the current folder/direction.
    * Empty / omitted = search all files in the scope.
-   * Relative path under the direction root (same as catalog entry.path).
-   * One-shot: снимается после запроса (для «подробнее» хранится в expandDocuments).
+   * Держится на уточняющих вопросах; сбрасывается явно (📄 → все файлы / смена папки).
    */
   documentPath: string;
   /** Temporary list for document picker (callback data size limit). */
   documentFiles: string[];
-  /** Документы, зафиксированные на preview — для «Подробный ответ». */
-  expandDocuments: string[];
   pendingQuestion: string | null;
   askHistory: Array<{ role: "user" | "assistant"; content: string }>;
   inputMode: InputMode;
@@ -31,7 +28,6 @@ function defaultSession(): BotSession {
     scopePath: resolvedDefaultScopePath(),
     documentPath: "",
     documentFiles: [],
-    expandDocuments: [],
     pendingQuestion: null,
     askHistory: [],
     inputMode: "none",
@@ -47,14 +43,12 @@ export function getSession(chatId: number): BotSession {
   // Backfill fields for sessions created before document filter existed.
   if (typeof session.documentPath !== "string") session.documentPath = "";
   if (!Array.isArray(session.documentFiles)) session.documentFiles = [];
-  if (!Array.isArray(session.expandDocuments)) session.expandDocuments = [];
   return session;
 }
 
 export function resetAskState(session: BotSession): void {
   session.pendingQuestion = null;
   session.askHistory = [];
-  session.expandDocuments = [];
 }
 
 export function sessionLabel(session: BotSession): string {
@@ -72,7 +66,7 @@ export function clearInputMode(session: BotSession): void {
   session.inputMode = "none";
 }
 
-/** Сброс фильтра «только этот файл» (после запроса или при смене области). */
+/** Явный сброс фильтра «только этот файл» (все файлы / смена папки / направления). */
 export function clearDocumentFilter(session: BotSession): void {
   session.documentPath = "";
 }
