@@ -10,7 +10,7 @@ import {
 } from "./attachmentExtract.js";
 import { extractScopeBoostTerms, extractSectionBoostTerms } from "./documentSearch.js";
 import { cleanupPhotoOcrText, isPhotoOcrDoubtful } from "./imageOcr.js";
-import { looksLikeQuizText, normalizeQuizFromOcr } from "./quizNormalize.js";
+import { looksLikeQuizText, normalizeQuizFromOcr, quizOcrLooksCleanEnough } from "./quizNormalize.js";
 
 export type AskHistoryItem = {
   role: "user" | "assistant";
@@ -246,8 +246,10 @@ export async function answerLibraryQuestion(
   }
 
   const userCaption = question.trim();
+  // Нормализация LLM — только если OCR «кривой»; чистый тест с вариантами идём сразу в поиск
   const shouldNormalizeQuiz =
     Boolean(extractedFromAttachment) &&
+    !quizOcrLooksCleanEnough(extractedFromAttachment ?? "") &&
     (ocrConfidence === "low" ||
       looksLikeQuizText(extractedFromAttachment ?? "") ||
       looksLikeQuizText(userCaption));
@@ -261,6 +263,7 @@ export async function answerLibraryQuestion(
       if (normalized.confidence === "low") ocrConfidence = "low";
       else if (ocrConfidence !== "low") ocrConfidence = "ok";
 
+      // Блокируем только если реально нечего искать (нет стека/вариантов) и нет подписи
       if (normalized.needs_clarification && !userCaption) {
         const preview = (normalized.formatted || extractedFromAttachment).slice(0, 900);
         return {
@@ -283,7 +286,14 @@ export async function answerLibraryQuestion(
       }
 
       normalizedQuestion = normalized.formatted;
-    } else if (ocrConfidence === "low" && !userCaption && isImageAttachmentFilename(attachmentFilename ?? "")) {
+      if (normalized.options.length >= 2) ocrConfidence = "ok";
+    } else if (
+      ocrConfidence === "low" &&
+      !userCaption &&
+      isImageAttachmentFilename(attachmentFilename ?? "") &&
+      !looksLikeQuizText(extractedFromAttachment)
+    ) {
+      // Совсем нечитаемо и не похоже на тест — просим уточнить
       const preview = extractedFromAttachment.slice(0, 900);
       return {
         answer:
@@ -302,6 +312,7 @@ export async function answerLibraryQuestion(
         ocr_pipeline: ocrPipeline,
       };
     }
+    // Если OCR low, но похож на тест — всё равно идём в поиск по сырому тексту (быстрее, чем отказ)
   }
 
   const q = normalizedQuestion

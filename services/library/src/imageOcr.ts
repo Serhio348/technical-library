@@ -271,19 +271,26 @@ async function ocrOnce(
   return { text: raw, score: scorePhotoOcrQuality(raw) };
 }
 
-async function ocrPhotoFile(imagePath: string, timeoutMs: number): Promise<{ text: string | null; score: number }> {
+async function ocrPhotoFile(
+  imagePath: string,
+  timeoutMs: number,
+  options?: { fast?: boolean },
+): Promise<{ text: string | null; score: number }> {
   let bestText = "";
   let bestScore = 0;
 
-  const perAttempt = Math.max(12_000, Math.floor(timeoutMs / PHOTO_PSM_MODES.length));
+  const modes = options?.fast ? (["6", "4"] as const) : PHOTO_PSM_MODES;
+  const perAttempt = Math.max(8_000, Math.floor(timeoutMs / modes.length));
 
-  for (const psm of PHOTO_PSM_MODES) {
+  for (const psm of modes) {
     try {
       const { text, score } = await ocrOnce(imagePath, perAttempt, psm);
       if (score > bestScore) {
         bestScore = score;
         bestText = text;
       }
+      // Fast: достаточно хорошего PSM 6 — не гоняем остальные
+      if (options?.fast && bestScore >= 80 && bestText.length >= 40) break;
     } catch {
       // try next mode
     }
@@ -295,40 +302,55 @@ async function ocrPhotoFile(imagePath: string, timeoutMs: number): Promise<{ tex
 
 export async function extractTextFromImageBuffer(
   buffer: Buffer,
-  options?: { timeoutMs?: number },
+  options?: { timeoutMs?: number; /** Быстрый путь для ask/бота: меньше preprocess/PSM. */ fast?: boolean },
 ): Promise<string | null> {
-  const timeoutMs = options?.timeoutMs ?? 120_000;
+  const fast = options?.fast === true;
+  const timeoutMs = options?.timeoutMs ?? (fast ? 45_000 : 120_000);
   const tmpRoot = await mkdtemp(join(tmpdir(), "doc-library-img-ocr-"));
   const sourcePath = join(tmpRoot, "source.bin");
 
-  // Сначала мягкие рецепты без blur/negate — меньше мусора на скринах тестов
-  const recipes: PreprocessRecipe[] = ["document", "screen_soft", "adaptive", "screen_inverted"];
+  // Fast: 1–2 preprocess вместо 4; early-exit ниже
+  const recipes: PreprocessRecipe[] = fast
+    ? ["screen_soft", "document"]
+    : ["document", "screen_soft", "adaptive", "screen_inverted"];
   let bestText: string | null = null;
   let bestScore = 0;
 
   try {
     await writeFile(sourcePath, buffer);
 
-    const perRecipeTimeout = Math.max(28_000, Math.floor(timeoutMs / recipes.length));
+    const perRecipeTimeout = Math.max(
+      fast ? 14_000 : 28_000,
+      Math.floor(timeoutMs / (recipes.length + 1)),
+    );
+
+    // Сначала сырой файл — часто достаточно для скрина теста
+    {
+      const rawAttempt = await ocrPhotoFile(sourcePath, perRecipeTimeout, { fast });
+      if (rawAttempt.text && rawAttempt.score > bestScore) {
+        bestScore = rawAttempt.score;
+        bestText = rawAttempt.text;
+      }
+      if (fast && bestScore >= 70 && bestText && isPhotoOcrUsable(bestText)) {
+        return bestText;
+      }
+      if (bestScore >= 160 && bestText && /вопрос|вариант/i.test(bestText)) {
+        return bestText;
+      }
+    }
 
     for (const recipe of recipes) {
       const outPath = join(tmpRoot, `${recipe}.png`);
       const ok = await preprocessPhoto(sourcePath, outPath, recipe, perRecipeTimeout);
       if (!ok) continue;
 
-      const { text, score } = await ocrPhotoFile(outPath, perRecipeTimeout);
+      const { text, score } = await ocrPhotoFile(outPath, perRecipeTimeout, { fast });
       if (text && score > bestScore) {
         bestScore = score;
         bestText = text;
       }
-      // Достаточно хороший результат — не тратим время на остальные preprocess
+      if (fast && bestScore >= 75 && bestText && isPhotoOcrUsable(bestText)) break;
       if (bestScore >= 160 && bestText && /вопрос|вариант/i.test(bestText)) break;
-    }
-
-    // Сырой файл без preprocess — иногда лучше, чем агрессивный ImageMagick
-    const rawAttempt = await ocrPhotoFile(sourcePath, perRecipeTimeout);
-    if (rawAttempt.text && rawAttempt.score > bestScore) {
-      bestText = rawAttempt.text;
     }
 
     return bestText;
@@ -361,7 +383,8 @@ export function isPhotoOcrUsable(text: string | null): boolean {
 
 /**
  * Текст читается, но качество сомнительное (смаз, блики, обрезка).
- * Лучше уточнить у пользователя, чем отвечать «в молоко».
+ * Раньше порог был слишком строгим (score&lt;95) — почти все фото шли в «плохое».
+ * Сейчас doubtful только при реально слабом OCR без нормальной структуры теста.
  */
 export function isPhotoOcrDoubtful(text: string | null): boolean {
   if (!text?.trim()) return true;
@@ -372,18 +395,20 @@ export function isPhotoOcrDoubtful(text: string | null): boolean {
   const words = countCyrillicWords(cleaned, 4);
   const lines = cleaned.split("\n").map((l) => l.trim()).filter(Boolean);
   const garbage = lines.filter((l) => isGarbageOcrLine(l)).length;
-  const hasQuizShape = /вопрос|вариант|\b[1-9a-dа-г](?:[.]|\))\s+\S/i.test(cleaned);
+  const hasQuizShape = /вопрос|вариант|(?:^|\n)\s*(?:[1-9]|[a-dа-г])(?:[.)])\s+\S/im.test(cleaned);
+  const optionLines = lines.filter((l) => /^(?:[1-9]|[a-dа-г])(?:[.)]|\s)/i.test(l)).length;
 
-  // Низкий балл при формально «usable»
-  if (score < 95) return true;
-  // Мало связных слов без структуры теста
-  if (words < 10 && !hasQuizShape) return true;
-  // Много мусорных строк среди оставшихся
-  if (lines.length >= 4 && garbage / lines.length >= 0.3) return true;
-  // Обрывки: много коротких «слов» из 1–2 букв
+  // Явная структура теста с вариантами — не считаем doubtful из‑за среднего score
+  if (hasQuizShape && optionLines >= 2 && words >= 6 && score >= 50) return false;
+
+  // Реально слабый OCR
+  if (score < 55) return true;
+  if (words < 6 && !hasQuizShape) return true;
+  if (lines.length >= 5 && garbage / lines.length >= 0.45) return true;
+
   const tokens = cleaned.split(/\s+/).filter(Boolean);
   const tiny = tokens.filter((t) => /^[А-Яа-яЁёA-Za-z]{1,2}$/.test(t)).length;
-  if (tokens.length >= 12 && tiny / tokens.length >= 0.35) return true;
+  if (tokens.length >= 16 && tiny / tokens.length >= 0.45) return true;
 
   return false;
 }
