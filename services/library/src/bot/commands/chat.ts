@@ -1,6 +1,7 @@
 import type { Telegraf, Context } from "telegraf";
 import { isDeepSeekConfigured } from "../../config.js";
 import { answerFreeChat } from "../../freeChat.js";
+import { decideWebSearch } from "../../webSearchIntent.js";
 import { escHtml, truncate } from "../format.js";
 import { BTN_CHAT, mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
 import { getSession, resetChatState } from "../session.js";
@@ -16,11 +17,8 @@ export async function enterFreeChat(ctx: Context): Promise<void> {
   await ctx.reply(
     "🤖 <b>Чат ИИ</b> — обычный разговор с моделью, <b>без</b> ваших PDF.\n\n" +
       "Для норм/ТКП из библиотеки — <b>💬 По документам</b>.\n\n" +
-      "<b>Как будет поиск в интернете:</b>\n" +
-      "1) Вы пишете вопрос\n" +
-      "2) Если нужны свежие данные («погугли», курс, погода, новости) — бот сам сходит в сеть\n" +
-      "3) Прочитает найденное и ответит уже с этим\n\n" +
-      "<i>Сейчас шаг 2–3 ещё не включён:</i> на такие вопросы отвечает из памяти модели и предупреждает об этом.\n\n" +
+      "<b>Поиск в интернете:</b> если вопрос про свежие данные («погугли», курс, погода, новости), " +
+      "бот сам сходит в сеть через DeepSeek и ответит со ссылками.\n\n" +
       "Выход: любая другая кнопка меню.",
     { parse_mode: "HTML", ...mainKeyboard() },
   );
@@ -41,7 +39,8 @@ export async function runFreeChat(ctx: Context, message: string): Promise<void> 
     return;
   }
 
-  await ctx.reply("Думаю…");
+  const maybeWeb = decideWebSearch(q, { mode: "chat" }).use;
+  await ctx.reply(maybeWeb ? "🌐 Ищу в интернете…" : "Думаю…");
 
   try {
     const result = await answerFreeChat(q, session.chatHistory);
