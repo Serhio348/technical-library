@@ -5,8 +5,10 @@ export const BTN_DIRECTION = "📚 Направление";
 export const BTN_FOLDER = "📁 Папка";
 export const BTN_FILE = "📄 Файл";
 export const BTN_SEARCH = "🔍 Поиск";
-/** Вопросы по PDF библиотеки. */
-export const BTN_ASK = "💬 По документам";
+/** Вопросы к ИИ по PDF библиотеки (коротко — иначе Telegram ломает перенос в ряду из 3). */
+export const BTN_ASK = "💬 По PDF";
+/** Старая подпись — нажатие всё ещё открывает тот же режим. */
+export const BTN_ASK_LEGACY = "💬 По документам";
 /** Свободный чат с моделью без библиотеки. */
 export const BTN_CHAT = "🤖 Чат ИИ";
 export const BTN_VOICE_HELP = "🎤 Набор голосом";
@@ -20,6 +22,7 @@ export const MENU_BUTTONS = new Set([
   BTN_FILE,
   BTN_SEARCH,
   BTN_ASK,
+  BTN_ASK_LEGACY,
   BTN_CHAT,
   BTN_VOICE_HELP,
   BTN_SCOPE,
@@ -28,9 +31,12 @@ export const MENU_BUTTONS = new Set([
 
 export function mainKeyboard() {
   const webAppUrl = resolvedTelegramWebAppUrl();
+  // Ряд из 2 кнопок шире — длинные подписи не «съезжают».
+  // Поиск ≠ По PDF: поиск — сниппеты по индексу; По PDF — ответ ИИ по документам.
   const rows: Array<Array<string | ReturnType<typeof Markup.button.webApp>>> = [
     [BTN_DIRECTION, BTN_FOLDER, BTN_FILE],
-    [BTN_SEARCH, BTN_ASK, BTN_CHAT],
+    [BTN_SEARCH, BTN_ASK],
+    [BTN_CHAT],
   ];
 
   if (webAppUrl) {
