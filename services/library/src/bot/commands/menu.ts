@@ -1,6 +1,8 @@
 import type { Telegraf, Context } from "telegraf";
 import {
   BTN_ASK,
+  BTN_ASK_LEGACY,
+  BTN_CHAT,
   BTN_DIRECTION,
   BTN_FILE,
   BTN_FOLDER,
@@ -121,16 +123,18 @@ export function registerMenu(bot: Telegraf<Context>): void {
       ? `\nИщем только в: ${session.documentPath.split("/").pop()}`
       : "\nЧтобы ограничить одним файлом — 📄 Файл.";
     await ctx.reply(
-      "💬 <b>По документам</b> — ответ только из PDF библиотеки (не общий чат и не интернет).\n\n" +
+      `<b>${BTN_ASK}</b> — ответ ИИ только из PDF библиотеки (не общий чат и не интернет).\n\n` +
         "Введите вопрос или 📷 фото (можно с подписью).\n" +
         "Для тестов с вариантами — сфотографируйте задание целиком." +
         fileHint +
-        "\n\nСвободный чат без PDF — кнопка <b>🤖 Чат ИИ</b>.",
+        `\n\nСвободный чат без PDF — кнопка <b>${BTN_CHAT}</b>.\n` +
+        `<i>${BTN_SEARCH}</i> — только находит фрагменты в индексе, без ответа ИИ.`,
       { parse_mode: "HTML", ...mainKeyboard() },
     );
   }
 
   bot.hears(BTN_ASK, enterDocsAsk);
+  bot.hears(BTN_ASK_LEGACY, enterDocsAsk);
 
   bot.hears(BTN_VOICE_HELP, async (ctx) => {
     await replyVoiceTypingHelp(ctx, Boolean(resolvedTelegramWebAppUrl()));
