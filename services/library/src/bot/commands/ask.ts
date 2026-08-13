@@ -10,7 +10,8 @@ import { escHtml, truncate } from "../format.js";
 import { askLibrary } from "../libraryClient.js";
 import { clearInputMode, getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
-import { mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
+import { BTN_ASK, mainKeyboard, MENU_BUTTONS } from "../keyboards.js";
+import { tryHandleChatText } from "./chat.js";
 import { runSearchQuery } from "./search.js";
 
 export type RunAskOptions = {
@@ -165,7 +166,7 @@ export async function runAsk(
 export async function runAskFull(ctx: Context): Promise<void> {
   const session = getSession(ctx.chat!.id);
   if (!session.pendingQuestion) {
-    await ctx.reply("Сначала задайте вопрос — 💬 Вопрос ИИ", mainKeyboard());
+    await ctx.reply(`Сначала задайте вопрос — ${BTN_ASK}`, mainKeyboard());
     return;
   }
   await runAsk(ctx, session.pendingQuestion, "full");
@@ -194,6 +195,10 @@ export function registerAsk(bot: Telegraf<Context>): void {
     if (MENU_BUTTONS.has(text)) return next();
 
     const session = getSession(ctx.chat!.id);
+
+    if (tryHandleChatText(ctx, text)) {
+      return;
+    }
 
     if (session.inputMode === "search") {
       await runSearchQuery(ctx, text);

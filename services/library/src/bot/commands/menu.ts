@@ -101,13 +101,14 @@ export function registerMenu(bot: Telegraf<Context>): void {
       return;
     }
     session.inputMode = "search";
+    session.chatHistory = [];
     const fileHint = session.documentPath
       ? `\nСейчас только: ${session.documentPath.split("/").pop()}`
       : "";
     await ctx.reply(`🔍 Введите текст или 📷 фото для поиска:${fileHint}`, mainKeyboard());
   });
 
-  bot.hears(BTN_ASK, async (ctx) => {
+  async function enterDocsAsk(ctx: Context): Promise<void> {
     const session = getSession(ctx.chat!.id);
     if (!session.slug) {
       await ctx.reply("Сначала выберите направление — 📚 Направление.", mainKeyboard());
@@ -115,16 +116,21 @@ export function registerMenu(bot: Telegraf<Context>): void {
       return;
     }
     session.inputMode = "question";
+    session.chatHistory = [];
     const fileHint = session.documentPath
       ? `\nИщем только в: ${session.documentPath.split("/").pop()}`
       : "\nЧтобы ограничить одним файлом — 📄 Файл.";
     await ctx.reply(
-      "💬 Введите вопрос или 📷 фото вопроса (можно с подписью).\n" +
-        "Для тестов с вариантами ответа — сфотографируйте задание целиком." +
-        fileHint,
-      mainKeyboard(),
+      "💬 <b>По документам</b> — ответ только из PDF библиотеки (не общий чат и не интернет).\n\n" +
+        "Введите вопрос или 📷 фото (можно с подписью).\n" +
+        "Для тестов с вариантами — сфотографируйте задание целиком." +
+        fileHint +
+        "\n\nСвободный чат без PDF — кнопка <b>🤖 Чат ИИ</b>.",
+      { parse_mode: "HTML", ...mainKeyboard() },
     );
-  });
+  }
+
+  bot.hears(BTN_ASK, enterDocsAsk);
 
   bot.hears(BTN_VOICE_HELP, async (ctx) => {
     await replyVoiceTypingHelp(ctx, Boolean(resolvedTelegramWebAppUrl()));
