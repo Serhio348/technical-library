@@ -2,6 +2,7 @@ import { Telegraf } from "telegraf";
 import type { Context } from "telegraf";
 import { env, isTelegramBotConfigured } from "../config.js";
 import { registerAsk } from "./commands/ask.js";
+import { registerChat } from "./commands/chat.js";
 import { registerContext } from "./commands/context.js";
 import { registerMedia } from "./commands/media.js";
 import { registerMenu } from "./commands/menu.js";
@@ -50,6 +51,7 @@ async function bootTelegram(instance: Telegraf<Context>): Promise<void> {
     { command: "start", description: "Главное меню" },
     { command: "search", description: "Поиск по тексту" },
     { command: "ask", description: "Вопрос по документам" },
+    { command: "chat", description: "Свободный чат с ИИ" },
     { command: "help", description: "Справка" },
   ]);
 
@@ -93,6 +95,7 @@ export function startBot(): void {
   registerContext(instance);
   registerMenu(instance);
   registerSearch(instance);
+  registerChat(instance);
   registerAsk(instance);
   registerMedia(instance);
 

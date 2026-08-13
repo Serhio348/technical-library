@@ -5,7 +5,12 @@ export const BTN_DIRECTION = "📚 Направление";
 export const BTN_FOLDER = "📁 Папка";
 export const BTN_FILE = "📄 Файл";
 export const BTN_SEARCH = "🔍 Поиск";
-export const BTN_ASK = "💬 Вопрос ИИ";
+/** Вопросы по PDF библиотеки (бывший «Вопрос ИИ»). */
+export const BTN_ASK = "💬 По документам";
+/** Alias старой кнопки — тоже открывает режим по документам. */
+export const BTN_ASK_LEGACY = "💬 Вопрос ИИ";
+/** Свободный чат с моделью без библиотеки. */
+export const BTN_CHAT = "🤖 Чат ИИ";
 export const BTN_VOICE_HELP = "🎤 Набор голосом";
 export const BTN_WEB_CHAT_LABEL = "🎤 Чат с голосом";
 export const BTN_SCOPE = "ℹ️ Где я?";
@@ -17,6 +22,8 @@ export const MENU_BUTTONS = new Set([
   BTN_FILE,
   BTN_SEARCH,
   BTN_ASK,
+  BTN_ASK_LEGACY,
+  BTN_CHAT,
   BTN_VOICE_HELP,
   BTN_SCOPE,
   BTN_SHOW,
@@ -26,7 +33,7 @@ export function mainKeyboard() {
   const webAppUrl = resolvedTelegramWebAppUrl();
   const rows: Array<Array<string | ReturnType<typeof Markup.button.webApp>>> = [
     [BTN_DIRECTION, BTN_FOLDER, BTN_FILE],
-    [BTN_SEARCH, BTN_ASK],
+    [BTN_SEARCH, BTN_ASK, BTN_CHAT],
   ];
 
   if (webAppUrl) {

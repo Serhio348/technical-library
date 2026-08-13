@@ -10,7 +10,11 @@ type ChatCompletionResponse = {
   error?: { message?: string };
 };
 
-export async function chatCompletion(messages: ChatMessage[], maxTokens = 1200): Promise<string> {
+export async function chatCompletion(
+  messages: ChatMessage[],
+  maxTokens = 1200,
+  options: { temperature?: number } = {},
+): Promise<string> {
   const key = env.DEEPSEEK_API_KEY?.trim();
   if (!key) throw new Error("deepseek_not_configured");
 
@@ -24,7 +28,7 @@ export async function chatCompletion(messages: ChatMessage[], maxTokens = 1200):
     body: JSON.stringify({
       model: env.DEEPSEEK_MODEL,
       messages,
-      temperature: 0.2,
+      temperature: options.temperature ?? 0.2,
       max_tokens: maxTokens,
     }),
     signal: AbortSignal.timeout(90_000),

@@ -13,6 +13,7 @@ import { getSession } from "../session.js";
 import { ensureDirectionOrPrompt } from "../direction.js";
 import { mainKeyboard } from "../keyboards.js";
 import { runAsk } from "./ask.js";
+import { runFreeChat } from "./chat.js";
 import { runSearchQuery } from "./search.js";
 import { replyVoiceTypingHelp } from "../voiceHelp.js";
 import { resolvedTelegramWebAppUrl } from "../../config.js";
@@ -28,6 +29,28 @@ async function handleSearchFromExtractedText(
 
 async function handleImageBuffer(ctx: Context, buffer: Buffer, caption: string): Promise<void> {
   const session = getSession(ctx.chat!.id);
+
+  // Свободный чат: фото → OCR → текст в чат (без библиотеки)
+  if (session.inputMode === "chat") {
+    await ctx.reply("📷 Распознаю текст на фото для чата…");
+    try {
+      const recognized = await extractTextFromImageBuffer(buffer);
+      if (!isPhotoOcrUsable(recognized)) {
+        await ctx.reply(
+          "Не удалось прочитать текст на фото. В «Чат ИИ» лучше писать текстом.",
+          mainKeyboard(),
+        );
+        return;
+      }
+      const message = caption ? `${caption}\n\n${recognized}` : recognized!;
+      await runFreeChat(ctx, message);
+    } catch (e) {
+      console.error("[bot/media] chat ocr", e);
+      await ctx.reply("Не удалось распознать фото.", mainKeyboard());
+    }
+    return;
+  }
+
   if (!(await ensureDirectionOrPrompt(ctx))) return;
 
   if (session.inputMode === "search") {
@@ -63,6 +86,25 @@ async function handleDocumentBuffer(
   caption: string,
 ): Promise<void> {
   const session = getSession(ctx.chat!.id);
+
+  if (session.inputMode === "chat") {
+    const kind = attachmentKindLabel(filename);
+    await ctx.reply(`📄 Читаю ${kind} для чата…`);
+    try {
+      const text = await extractTextFromAskAttachment(buffer, filename);
+      if (!isAskAttachmentTextUsable(text, filename)) {
+        await ctx.reply("Не удалось извлечь текст. В «Чат ИИ» лучше писать текстом.", mainKeyboard());
+        return;
+      }
+      const message = caption ? `${caption}\n\n${text}` : text!;
+      await runFreeChat(ctx, message);
+    } catch (e) {
+      console.error("[bot/media] chat document", e);
+      await ctx.reply("Не удалось прочитать файл.", mainKeyboard());
+    }
+    return;
+  }
+
   if (!(await ensureDirectionOrPrompt(ctx))) return;
 
   const kind = attachmentKindLabel(filename);

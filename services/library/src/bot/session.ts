@@ -1,6 +1,11 @@
 import { env, resolvedDefaultScopePath } from "../config.js";
 
-export type InputMode = "none" | "search" | "question";
+export type InputMode = "none" | "search" | "question" | "chat";
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
 
 export type BotSession = {
   slug: string;
@@ -15,7 +20,10 @@ export type BotSession = {
   /** Temporary list for document picker (callback data size limit). */
   documentFiles: string[];
   pendingQuestion: string | null;
-  askHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  /** История диалога по документам («По документам»). */
+  askHistory: ChatMessage[];
+  /** История свободного чата без библиотеки («Чат ИИ»). */
+  chatHistory: ChatMessage[];
   inputMode: InputMode;
 };
 
@@ -30,6 +38,7 @@ function defaultSession(): BotSession {
     documentFiles: [],
     pendingQuestion: null,
     askHistory: [],
+    chatHistory: [],
     inputMode: "none",
   };
 }
@@ -40,15 +49,20 @@ export function getSession(chatId: number): BotSession {
     session = defaultSession();
     sessions.set(chatId, session);
   }
-  // Backfill fields for sessions created before document filter existed.
+  // Backfill fields for sessions created before document filter / free chat existed.
   if (typeof session.documentPath !== "string") session.documentPath = "";
   if (!Array.isArray(session.documentFiles)) session.documentFiles = [];
+  if (!Array.isArray(session.chatHistory)) session.chatHistory = [];
   return session;
 }
 
 export function resetAskState(session: BotSession): void {
   session.pendingQuestion = null;
   session.askHistory = [];
+}
+
+export function resetChatState(session: BotSession): void {
+  session.chatHistory = [];
 }
 
 export function sessionLabel(session: BotSession): string {
