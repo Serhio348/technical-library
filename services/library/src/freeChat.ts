@@ -48,7 +48,7 @@ export async function answerFreeChat(
   const answer = await chatCompletion(messages, 1600, { temperature: 0.5 });
 
   const prefix = decision.use
-    ? "🌐 Для этого вопроса пригодится интернет (подключим отдельно). Пока ответ по знаниям модели:\n\n"
+    ? "🌐 Сюда позже подключим поиск в сети (бот сам сходит в интернет и уточнит ответ). Пока — из знаний модели:\n\n"
     : "";
 
   return {

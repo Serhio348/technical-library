@@ -1,7 +1,6 @@
 import type { Telegraf, Context } from "telegraf";
 import {
   BTN_ASK,
-  BTN_ASK_LEGACY,
   BTN_DIRECTION,
   BTN_FILE,
   BTN_FOLDER,
@@ -132,7 +131,6 @@ export function registerMenu(bot: Telegraf<Context>): void {
   }
 
   bot.hears(BTN_ASK, enterDocsAsk);
-  bot.hears(BTN_ASK_LEGACY, enterDocsAsk);
 
   bot.hears(BTN_VOICE_HELP, async (ctx) => {
     await replyVoiceTypingHelp(ctx, Boolean(resolvedTelegramWebAppUrl()));

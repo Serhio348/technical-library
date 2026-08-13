@@ -5,10 +5,8 @@ export const BTN_DIRECTION = "📚 Направление";
 export const BTN_FOLDER = "📁 Папка";
 export const BTN_FILE = "📄 Файл";
 export const BTN_SEARCH = "🔍 Поиск";
-/** Вопросы по PDF библиотеки (бывший «Вопрос ИИ»). */
+/** Вопросы по PDF библиотеки. */
 export const BTN_ASK = "💬 По документам";
-/** Alias старой кнопки — тоже открывает режим по документам. */
-export const BTN_ASK_LEGACY = "💬 Вопрос ИИ";
 /** Свободный чат с моделью без библиотеки. */
 export const BTN_CHAT = "🤖 Чат ИИ";
 export const BTN_VOICE_HELP = "🎤 Набор голосом";
@@ -22,7 +20,6 @@ export const MENU_BUTTONS = new Set([
   BTN_FILE,
   BTN_SEARCH,
   BTN_ASK,
-  BTN_ASK_LEGACY,
   BTN_CHAT,
   BTN_VOICE_HELP,
   BTN_SCOPE,
